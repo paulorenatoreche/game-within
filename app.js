@@ -14,6 +14,11 @@ const firebaseConfig = {
     appId: "1:887478087985:web:5d3befd92e5f1cae1fc010"
 };
 
+// ==========================================
+// REPLACE WITH YOUR ACTUAL GOOGLE ACCOUNT UID
+// ==========================================
+const ADMIN_UID = "ePaR8uYILlOa53Tns3RCpdgMgQf2"; 
+
 // Initialization
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -50,9 +55,19 @@ logoutBtn.addEventListener('click', () => signOut(auth));
 
 onAuthStateChanged(auth, (user) => {
     if (user) {
-        isAdmin = true;
-        document.body.classList.add('is-admin');
-        loginBtn.style.display = 'none';
+        // STRICT ADMIN CHECK: Only allow the predefined UID
+        if (user.uid === ADMIN_UID) {
+            isAdmin = true;
+            document.body.classList.add('is-admin');
+            loginBtn.style.display = 'none';
+        } else {
+            // Unauthorized User - Sign them out immediately
+            alert("Unauthorized account. You do not have permission to edit this library.");
+            signOut(auth);
+            isAdmin = false;
+            document.body.classList.remove('is-admin');
+            loginBtn.style.display = 'block';
+        }
     } else {
         isAdmin = false;
         document.body.classList.remove('is-admin');
@@ -97,7 +112,7 @@ lightbox.addEventListener('click', () => {
 // 3. ADD OR EDIT GAME (FORM SUBMIT)
 addGameForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!isAdmin) return alert("Unauthorized!");
+    if (!isAdmin) return alert("Unauthorized! You are not logged in as the admin.");
 
     const btnSubmit = document.getElementById('submitBtn');
     btnSubmit.innerText = "Saving...";
