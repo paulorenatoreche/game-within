@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>gameWithin</title>
+    <!-- Tailwind CSS para um design clean e tecnológico -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .tag { background: #3b82f6; color: white; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; }
+        /* Oculta elementos restritos inicialmente */
+        .admin-only { display: none; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="glass sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
+        <h1 class="text-2xl font-bold tracking-wider text-blue-400">
+            <i class="fa-solid fa-gamepad mr-2"></i>_gameWithin
+        </h1>
+        <div class="flex gap-4">
+            <button id="shareBtn" class="hover:text-blue-400 transition" title="Compartilhar Link">
+                <i class="fa-solid fa-share-nodes text-xl"></i>
+            </button>
+            <button id="loginBtn" class="hover:text-blue-400 transition text-sm opacity-50" title="Admin Login">
+                <i class="fa-solid fa-lock"></i>
+            </button>
+            <button id="logoutBtn" class="hover:text-red-400 transition text-sm admin-only" title="Sair">
+                <i class="fa-solid fa-right-from-bracket"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-8">
+        
+        <!-- Botão Adicionar Jogo (Flutuante para o Admin) -->
+        <button id="addGameBtn" class="admin-only fixed bottom-8 right-8 bg-blue-600 hover:bg-blue-500 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg shadow-blue-500/50 transition transform hover:scale-110 z-50">
+            <i class="fa-solid fa-plus text-2xl"></i>
+        </button>
+
+        <!-- Grid de Jogos -->
+        <div id="gamesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Cards de jogos serão injetados aqui via JS -->
+        </div>
+
+    </main>
+
+    <!-- Modal Adicionar Jogo -->
+    <div id="gameModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-4">
+        <div class="glass w-full max-w-lg rounded-xl p-6 relative">
+            <button id="closeModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <h2 class="text-xl font-bold mb-4">Adicionar Novo Jogo</h2>
+            
+            <form id="addGameForm" class="flex flex-col gap-4">
+                <input type="text" id="gameTitle" placeholder="Título do Jogo" required class="bg-gray-800 border border-gray-700 rounded p-2 focus:outline-none focus:border-blue-500">
+                
+                <div>
+                    <label class="block text-sm mb-1 text-gray-400">Imagem da Capa</label>
+                    <input type="file" id="gameCover" accept="image/*" required class="w-full text-sm">
+                </div>
+
+                <input type="text" id="gamePlatforms" placeholder="Plataformas (separadas por vírgula. Ex: Steam, iOS)" required class="bg-gray-800 border border-gray-700 rounded p-2 focus:outline-none focus:border-blue-500">
+                
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-sm mb-1 text-gray-400">Horas Jogadas</label>
+                        <input type="number" id="gameHours" placeholder="Ex: 45" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm mb-1 text-gray-400">Nota (0 a 5)</label>
+                        <input type="number" id="gameRating" min="0" max="5" placeholder="Ex: 5" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm mb-1 text-gray-400">Review (Max 500 caract.)</label>
+                    <textarea id="gameReview" maxlength="500" rows="3" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none focus:border-blue-500"></textarea>
+                </div>
+
+                <div class="flex gap-4 items-center">
+                    <label class="text-sm text-gray-400">Veredito:</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="verdict" value="up" checked> <i class="fa-solid fa-thumbs-up text-green-400"></i> Recomendo</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="verdict" value="down"> <i class="fa-solid fa-thumbs-down text-red-400"></i> Não Recomendo</label>
+                </div>
+
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-2">Salvar Jogo</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Seção: Meu Setup -->
+    <footer class="glass border-t border-gray-800 mt-12 py-10">
+        <div class="max-w-4xl mx-auto px-4 text-center">
+            <h3 class="text-xl font-bold mb-6 text-gray-300"><i class="fa-solid fa-desktop mr-2"></i>_setup</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-400">
+                <div class="p-4 bg-gray-800/50 rounded-lg">
+                    <i class="fa-solid fa-microchip text-2xl mb-2 text-blue-400"></i>
+                    <p class="font-bold text-gray-200">-</p>
+                    <p>i7-10750H @ 2.60GHz</p> <!-- EDITE AQUI -->
+                </div>
+                <div class="p-4 bg-gray-800/50 rounded-lg">
+                    <i class="fa-solid fa-memory text-2xl mb-2 text-blue-400"></i>
+                    <p class="font-bold text-gray-200">-</p>
+                    <p>16 GB RAM • NVIDIA GeForce RTX 2060 (6GB VRAM)</p> <!-- EDITE AQUI -->
+                </div>
+                <div class="p-4 bg-gray-800/50 rounded-lg">
+                    <i class="fa-solid fa-headphones text-2xl mb-2 text-blue-400"></i>
+                    <p class="font-bold text-gray-200">-</p>
+                    <p>Bose QuietComfort Ultra</p> <!-- EDITE AQUI -->
+                </div>
+                <div class="p-4 bg-gray-800/50 rounded-lg">
+                    <i class="fa-solid fa-keyboard text-2xl mb-2 text-blue-400"></i>
+                    <p class="font-bold text-gray-200">-</p>
+                    <p>Regular ones</p> <!-- EDITE AQUI -->
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- App JS -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>
