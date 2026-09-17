@@ -1,19 +1,27 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>gameWithin</title>
-    <!-- Tailwind CSS para um design clean e tecnológico -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome para ícones -->
+    <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
         .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
         .tag { background: #3b82f6; color: white; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; }
-        /* Oculta elementos restritos inicialmente */
-        .admin-only { display: none; }
+        
+        /* Custom scrollbar for the table container */
+        .table-scroll::-webkit-scrollbar { height: 8px; }
+        .table-scroll::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+        .table-scroll::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
+
+        /* Admin UI handling */
+        .admin-only { display: none !important; }
+        body.is-admin .admin-only { display: flex !important; }
+        body.is-admin .admin-table-cell { display: table-cell !important; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -24,100 +32,134 @@
             <i class="fa-solid fa-gamepad mr-2"></i>_gameWithin
         </h1>
         <div class="flex gap-4">
-            <button id="shareBtn" class="hover:text-blue-400 transition" title="Compartilhar Link">
+            <button id="shareBtn" class="hover:text-blue-400 transition" title="Share Link">
                 <i class="fa-solid fa-share-nodes text-xl"></i>
             </button>
             <button id="loginBtn" class="hover:text-blue-400 transition text-sm opacity-50" title="Admin Login">
                 <i class="fa-solid fa-lock"></i>
             </button>
-            <button id="logoutBtn" class="hover:text-red-400 transition text-sm admin-only" title="Sair">
+            <button id="logoutBtn" class="hover:text-red-400 transition text-sm admin-only" title="Logout">
                 <i class="fa-solid fa-right-from-bracket"></i>
             </button>
         </div>
     </header>
 
     <!-- Main Content -->
-    <main class="flex-grow max-w-7xl w-full mx-auto px-4 py-8">
+    <main class="flex-grow max-w-[90rem] w-full mx-auto px-4 py-8">
         
-        <!-- Botão Adicionar Jogo (Flutuante para o Admin) -->
-        <button id="addGameBtn" class="admin-only fixed bottom-8 right-8 bg-blue-600 hover:bg-blue-500 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg shadow-blue-500/50 transition transform hover:scale-110 z-50">
+        <!-- Floating Add Game Button (Admin Only) -->
+        <button id="addGameBtn" class="admin-only fixed bottom-8 right-8 bg-blue-600 hover:bg-blue-500 text-white rounded-full w-14 h-14 items-center justify-center shadow-lg shadow-blue-500/50 transition transform hover:scale-110 z-50">
             <i class="fa-solid fa-plus text-2xl"></i>
         </button>
 
-        <!-- Grid de Jogos -->
-        <div id="gamesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Cards de jogos serão injetados aqui via JS -->
+        <!-- Games Table -->
+        <div class="glass rounded-xl overflow-hidden border border-gray-700 shadow-xl">
+            <div class="overflow-x-auto table-scroll w-full">
+                <table class="w-full text-left border-collapse min-w-[1000px]">
+                    <thead class="bg-gray-800/80 border-b border-gray-700">
+                        <tr>
+                            <th class="p-4 text-gray-400 font-semibold w-28 text-center">Cover</th>
+                            <th class="p-4 text-gray-400 font-semibold w-1/5 text-center">Title & Platforms</th>
+                            <th class="p-4 text-gray-400 font-semibold text-center">Hours</th>
+                            <th class="p-4 text-gray-400 font-semibold text-center">Rating</th>
+                            <th class="p-4 text-gray-400 font-semibold w-1/3">Review</th>
+                            <th class="p-4 text-gray-400 font-semibold text-center">Year</th>
+                            <th class="p-4 text-gray-400 font-semibold text-center">Verdict</th>
+                            <th class="p-4 text-gray-400 font-semibold text-center admin-only admin-table-cell hidden">Admin</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gamesTableBody" class="divide-y divide-gray-800/50">
+                        <!-- Table rows injected via JS -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
     </main>
 
-    <!-- Modal Adicionar Jogo -->
+    <!-- Add/Edit Game Modal -->
     <div id="gameModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-4">
-        <div class="glass w-full max-w-lg rounded-xl p-6 relative">
+        <div class="glass w-full max-w-lg rounded-xl p-6 relative max-h-[95vh] overflow-y-auto">
             <button id="closeModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
-            <h2 class="text-xl font-bold mb-4">Adicionar Novo Jogo</h2>
+            <h2 id="modalTitle" class="text-xl font-bold mb-4">Add New Game</h2>
             
             <form id="addGameForm" class="flex flex-col gap-4">
-                <input type="text" id="gameTitle" placeholder="Título do Jogo" required class="bg-gray-800 border border-gray-700 rounded p-2 focus:outline-none focus:border-blue-500">
+                <!-- Hidden inputs for Edit mode -->
+                <input type="hidden" id="gameId">
+                <input type="hidden" id="gameOldCover">
+
+                <input type="text" id="gameTitle" placeholder="Game Title" required class="bg-gray-800 border border-gray-700 rounded p-2 focus:outline-none focus:border-blue-500">
                 
-                <div>
-                    <label class="block text-sm mb-1 text-gray-400">Imagem da Capa</label>
-                    <input type="file" id="gameCover" accept="image/*" required class="w-full text-sm">
+                <div class="bg-blue-900/20 border border-blue-800/50 p-3 rounded">
+                    <label class="block text-sm mb-1 text-blue-300 font-semibold">Cover Image</label>
+                    <p class="text-xs text-gray-400 mb-2">Use <strong>portrait format</strong>. (Leave empty if editing and keeping the same image).</p>
+                    <input type="file" id="gameCover" accept="image/*" class="w-full text-sm text-gray-300">
                 </div>
 
-                <input type="text" id="gamePlatforms" placeholder="Plataformas (separadas por vírgula. Ex: Steam, iOS)" required class="bg-gray-800 border border-gray-700 rounded p-2 focus:outline-none focus:border-blue-500">
+                <input type="text" id="gamePlatforms" placeholder="Platforms (comma separated. Ex: Steam, iOS)" required class="bg-gray-800 border border-gray-700 rounded p-2 focus:outline-none focus:border-blue-500">
                 
                 <div class="flex gap-4">
                     <div class="flex-1">
-                        <label class="block text-sm mb-1 text-gray-400">Horas Jogadas</label>
-                        <input type="number" id="gameHours" placeholder="Ex: 45" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none">
+                        <label class="block text-sm mb-1 text-gray-400">Hours Played</label>
+                        <input type="number" id="gameHours" step="0.1" min="0" placeholder="Ex: 45.5" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none">
                     </div>
                     <div class="flex-1">
-                        <label class="block text-sm mb-1 text-gray-400">Nota (0 a 5)</label>
-                        <input type="number" id="gameRating" min="0" max="5" placeholder="Ex: 5" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none">
+                        <label class="block text-sm mb-1 text-gray-400">Rating (0 to 5)</label>
+                        <input type="number" id="gameRating" step="0.1" min="0" max="5" placeholder="Ex: 4.8" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm mb-1 text-gray-400">Year Played</label>
+                        <input type="number" id="gameYear" min="1980" max="2099" placeholder="Ex: 2024" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none">
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-sm mb-1 text-gray-400">Review (Max 500 caract.)</label>
-                    <textarea id="gameReview" maxlength="500" rows="3" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none focus:border-blue-500"></textarea>
+                    <label class="block text-sm mb-1 text-gray-400">Review (Max 300 chars)</label>
+                    <textarea id="gameReview" maxlength="300" rows="3" required class="bg-gray-800 border border-gray-700 rounded p-2 w-full focus:outline-none focus:border-blue-500"></textarea>
+                    <div id="charCount" class="text-xs text-gray-500 text-right mt-1 font-mono">0 / 300 characters</div>
                 </div>
 
-                <div class="flex gap-4 items-center">
-                    <label class="text-sm text-gray-400">Veredito:</label>
-                    <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="verdict" value="up" checked> <i class="fa-solid fa-thumbs-up text-green-400"></i> Recomendo</label>
-                    <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="verdict" value="down"> <i class="fa-solid fa-thumbs-down text-red-400"></i> Não Recomendo</label>
+                <div class="flex gap-4 items-center bg-gray-800/50 p-3 rounded">
+                    <label class="text-sm text-gray-400">Verdict:</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="verdict" value="up" checked> <i class="fa-solid fa-thumbs-up text-green-400"></i> Recommend</label>
+                    <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="verdict" value="down"> <i class="fa-solid fa-thumbs-down text-red-400"></i> Don't Rec.</label>
                 </div>
 
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-2">Salvar Jogo</button>
+                <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-2 transition">Save Game</button>
             </form>
         </div>
     </div>
 
-    <!-- Seção: Meu Setup -->
+    <!-- Image Lightbox Modal -->
+    <div id="lightbox" class="fixed inset-0 bg-black/90 z-[100] hidden flex items-center justify-center p-4 cursor-zoom-out transition-opacity">
+        <img id="lightbox-img" src="" class="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl">
+        <button class="absolute top-6 right-6 text-white hover:text-gray-300 text-3xl"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <!-- Section: My Setup -->
     <footer class="glass border-t border-gray-800 mt-12 py-10">
         <div class="max-w-4xl mx-auto px-4 text-center">
             <h3 class="text-xl font-bold mb-6 text-gray-300"><i class="fa-solid fa-desktop mr-2"></i>_setup</h3>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-400">
                 <div class="p-4 bg-gray-800/50 rounded-lg">
                     <i class="fa-solid fa-microchip text-2xl mb-2 text-blue-400"></i>
-                    <p class="font-bold text-gray-200">-</p>
-                    <p>i7-10750H @ 2.60GHz</p> <!-- EDITE AQUI -->
+                    <p class="font-bold text-gray-200">Processor</p>
+                    <p>i7-10750H @ 2.60GHz</p>
                 </div>
                 <div class="p-4 bg-gray-800/50 rounded-lg">
                     <i class="fa-solid fa-memory text-2xl mb-2 text-blue-400"></i>
-                    <p class="font-bold text-gray-200">-</p>
-                    <p>16 GB RAM • NVIDIA GeForce RTX 2060 (6GB VRAM)</p> <!-- EDITE AQUI -->
+                    <p class="font-bold text-gray-200">Memory & GPU</p>
+                    <p>16 GB RAM • RTX 2060 (6GB)</p>
                 </div>
                 <div class="p-4 bg-gray-800/50 rounded-lg">
                     <i class="fa-solid fa-headphones text-2xl mb-2 text-blue-400"></i>
-                    <p class="font-bold text-gray-200">-</p>
-                    <p>Bose QuietComfort Ultra</p> <!-- EDITE AQUI -->
+                    <p class="font-bold text-gray-200">Audio</p>
+                    <p>Bose QuietComfort Ultra</p>
                 </div>
                 <div class="p-4 bg-gray-800/50 rounded-lg">
                     <i class="fa-solid fa-keyboard text-2xl mb-2 text-blue-400"></i>
-                    <p class="font-bold text-gray-200">-</p>
-                    <p>Regular ones</p> <!-- EDITE AQUI -->
+                    <p class="font-bold text-gray-200">Peripherals</p>
+                    <p>Regular ones</p>
                 </div>
             </div>
         </div>
