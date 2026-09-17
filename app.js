@@ -1,8 +1,7 @@
 // Firebase SDK Imports (Modular)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-// Notice we imported onSnapshot here!
-import { getFirestore, collection, addDoc, getDocs, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // YOUR FIREBASE CONFIGURATION
@@ -37,27 +36,13 @@ const gamesTableBody = document.getElementById('gamesTableBody');
 const shareBtn = document.getElementById('shareBtn');
 const gameReview = document.getElementById('gameReview');
 const charCount = document.getElementById('charCount');
-const liveIndicator = document.getElementById('liveIndicator');
 
 // Lightbox Elements
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
 
 let isAdmin = false;
-let loadedGamesList = []; 
 let sortableInstance = null; 
-let unsubscribeSnapshot = null;
-let isDragging = false; // Flag to prevent UI re-renders during active drag
-
-// Data Saver & Mobile Detection
-function isMobileOrDataSaver() {
-    // Check if network implies cellular or data saving mode
-    if (navigator.connection && (navigator.connection.saveData || navigator.connection.type === 'cellular')) {
-        return true;
-    }
-    // Check if device is small screen or mobile OS
-    return /Mobi|Android|iPhone/i.test(navigator.userAgent) || window.innerWidth <= 768;
-}
 
 // Generate consistent colors from strings
 function getPlatformColor(platformName) {
@@ -107,6 +92,7 @@ onAuthStateChanged(auth, (user) => {
             sortableInstance = null;
         }
     }
+    loadGames(); 
 });
 
 // 2. MODALS, LIGHTBOX & SHARING
@@ -178,11 +164,7 @@ addGameForm.addEventListener('submit', async (e) => {
 
         addGameForm.reset();
         gameModal.classList.add('hidden');
-        
-        // If not on Live mode, manually reload. Otherwise, onSnapshot handles it automatically!
-        if (isMobileOrDataSaver()) {
-            loadGames(); 
-        }
+        loadGames(); 
     } catch (error) {
         alert("Error saving: " + error.message);
     } finally {
@@ -191,122 +173,96 @@ addGameForm.addEventListener('submit', async (e) => {
     }
 });
 
-// 4. LOAD & RENDER GAMES (Data Saver vs Live Sync)
+// 4. LOAD & RENDER GAMES
 async function loadGames() {
-    const q = query(collection(db, "games"), orderBy("createdAt", "desc"));
+    gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">Loading library...</td></tr>';
     
-    if (isMobileOrDataSaver()) {
-        // [DATA SAVER MODE] - Standard one-time fetch
-        liveIndicator.classList.add('hidden');
-        try {
-            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">Loading library...</td></tr>';
-            const querySnapshot = await getDocs(q);
-            renderGamesHTML(querySnapshot);
-        } catch (error) {
-            console.error("Error:", error);
-            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-red-400">Error loading.</td></tr>';
+    try {
+        const q = query(collection(db, "games"), orderBy("createdAt", "desc"));
+        const querySnapshot = await getDocs(q);
+        
+        gamesTableBody.innerHTML = ''; 
+
+        if (querySnapshot.empty) {
+            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">No games added yet.</td></tr>';
+            return;
         }
-    } else {
-        // [LIVE SYNC MODE] - Realtime WebSocket
-        liveIndicator.classList.remove('hidden');
-        if (unsubscribeSnapshot) unsubscribeSnapshot();
-        
-        unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
-            // Ignore re-renders if the admin is actively dragging an item to prevent UI glitches
-            if (!isDragging) {
-                renderGamesHTML(querySnapshot);
-            }
-        }, (error) => {
-            console.error("Live Sync Error:", error);
-        });
-    }
-}
 
-// Split rendering into its own function so both Modes can use it cleanly
-function renderGamesHTML(querySnapshot) {
-    loadedGamesList = []; 
-    gamesTableBody.innerHTML = ''; 
+        querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            
+            const tagsHTML = data.platforms.map(p => {
+                const color = getPlatformColor(p);
+                return `<span class="tag shadow border border-white/10" style="background-color: ${color}">${p}</span>`;
+            }).join('');
+            
+            const verdictIcon = data.verdict === 'up' 
+                ? '<i class="fa-solid fa-thumbs-up text-green-400 text-lg sm:text-2xl" title="Recommend"></i>' 
+                : '<i class="fa-solid fa-thumbs-down text-red-400 text-lg sm:text-2xl" title="Don\'t Recommend"></i>';
 
-    if(querySnapshot.empty) {
-        gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">No games added yet.</td></tr>';
-        return;
-    }
-
-    querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        loadedGamesList.push({ id: docSnap.id, data: data });
-        
-        const tagsHTML = data.platforms.map(p => {
-            const color = getPlatformColor(p);
-            return `<span class="tag shadow border border-white/20" style="background-color: ${color}">${p}</span>`;
-        }).join('');
-        
-        const verdictIcon = data.verdict === 'up' 
-            ? '<i class="fa-solid fa-thumbs-up text-green-400 text-2xl" title="Recommend"></i>' 
-            : '<i class="fa-solid fa-thumbs-down text-red-400 text-2xl" title="Don\'t Recommend"></i>';
-
-        const adminButtons = `
-            <div class="flex items-center justify-center gap-4">
-                <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-xl transition p-2" title="Drag to reorder"></i>
-                <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-lg p-2" title="Edit"><i class="fa-solid fa-pen"></i></button>
-                <button class="delete-btn text-red-500 hover:text-red-400 transition text-lg p-2" title="Delete"><i class="fa-solid fa-trash"></i></button>
-            </div>
-        `;
-
-        const tr = document.createElement('tr');
-        tr.className = "hover:bg-gray-800/40 transition duration-200 group";
-        tr.setAttribute('data-id', docSnap.id);
-        
-        tr.innerHTML = `
-            <td class="p-4 align-middle text-center">
-                <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-24 mx-auto aspect-[3/4] object-cover rounded shadow-md border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
-            </td>
-            <td class="p-4 align-middle text-center">
-                <h3 class="text-xl font-bold text-white mb-2 leading-tight">${data.title}</h3>
-                <div class="flex flex-wrap justify-center gap-1.5">${tagsHTML}</div>
-            </td>
-            <td class="p-4 align-middle text-center">
-                <span class="text-gray-300 font-mono text-lg bg-gray-800 px-3 py-1 rounded-lg border border-gray-700">
-                    <i class="fa-regular fa-clock text-gray-500 mr-1 text-sm"></i>${Number(data.hours).toFixed(1)}h
-                </span>
-            </td>
-            <td class="p-4 align-middle text-center">
-                <div class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-md">
-                    ${Number(data.rating).toFixed(1)}
+            const adminButtons = `
+                <div class="flex items-center justify-center gap-2 sm:gap-3">
+                    <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-base sm:text-lg transition p-1.5" title="Drag to reorder"></i>
+                    <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-sm sm:text-base p-1.5" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="delete-btn text-red-500 hover:text-red-400 transition text-sm sm:text-base p-1.5" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </div>
-            </td>
-            <td class="p-4 align-middle">
-                <p class="text-gray-400 text-sm italic leading-relaxed">"${data.review}"</p>
-            </td>
-            <td class="p-4 align-middle text-center">
-                <span class="text-gray-300 font-bold tracking-wider">${data.year || '-'}</span>
-            </td>
-            <td class="p-4 align-middle text-center">
-                ${verdictIcon}
-            </td>
-            <td class="p-4 align-middle text-center admin-only admin-table-cell hidden">
-                ${adminButtons}
-            </td>
-        `;
+            `;
 
-        tr.querySelector('.cover-img').addEventListener('click', (e) => {
-            lightboxImg.src = e.target.dataset.url;
-            lightbox.classList.remove('hidden');
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-gray-800/40 transition duration-200 group";
+            tr.setAttribute('data-id', docSnap.id);
+            
+            tr.innerHTML = `
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <h3 class="text-sm sm:text-base font-bold text-white mb-1.5 leading-snug">${data.title}</h3>
+                    <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <span class="inline-flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm bg-gray-800 px-2 py-1 rounded border border-gray-700 whitespace-nowrap shrink-0">
+                        <i class="fa-regular fa-clock text-gray-500 mr-1"></i>${Number(data.hours).toFixed(1)}h
+                    </span>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <div class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-sm">
+                        ${Number(data.rating).toFixed(1)}
+                    </div>
+                </td>
+                <td class="p-2 sm:p-3 align-middle">
+                    <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-3 sm:line-clamp-none">"${data.review}"</p>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
+                    <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    ${verdictIcon}
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center admin-only admin-table-cell hidden">
+                    ${adminButtons}
+                </td>
+            `;
+
+            tr.querySelector('.cover-img').addEventListener('click', (e) => {
+                lightboxImg.src = e.target.dataset.url;
+                lightbox.classList.remove('hidden');
+            });
+
+            if (isAdmin) {
+                tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(docSnap.id, data));
+                tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(docSnap.id, data.title));
+            }
+
+            gamesTableBody.appendChild(tr);
         });
 
         if (isAdmin) {
-            tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(docSnap.id, data));
-            tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(docSnap.id, data.title));
+            initSortable();
         }
-
-        gamesTableBody.appendChild(tr);
-    });
-
-    // Re-bind Sortable after re-render if admin is logged in
-    if (isAdmin && !isDragging) {
-        if (sortableInstance) sortableInstance.destroy();
-        sortableInstance = null;
-        initSortable();
+    } catch (error) {
+        console.error("Error loading games:", error);
+        gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-red-400">Error loading the library.</td></tr>';
     }
 }
 
@@ -330,52 +286,45 @@ function openEditModal(id, data) {
     gameModal.classList.remove('hidden');
 }
 
-// Drag and Drop Initialization
+// Drag and Drop Initialization (Guaranteed Firestore Persistence)
 function initSortable() {
-    if (sortableInstance) return; 
+    if (sortableInstance) {
+        sortableInstance.destroy();
+        sortableInstance = null;
+    }
 
     sortableInstance = Sortable.create(gamesTableBody, {
         handle: '.drag-handle', 
-        animation: 250, 
+        animation: 200, 
         forceFallback: true, 
         fallbackClass: 'sortable-drag', 
         ghostClass: 'sortable-ghost',
         
-        onStart: function () {
-            // Pause live updates to prevent DOM reset while dragging
-            isDragging = true; 
-        },
         onEnd: async function (evt) {
-            isDragging = false; // Drag finished
-
             if (evt.oldIndex === evt.newIndex) return;
 
+            // Get current visual order of IDs from the table
             const rows = Array.from(gamesTableBody.querySelectorAll('tr[data-id]'));
             const newOrderIds = rows.map(row => row.dataset.id);
 
-            const timestamps = loadedGamesList.map(g => 
-                g.data.createdAt.toMillis ? g.data.createdAt.toMillis() : g.data.createdAt.getTime()
-            );
-            timestamps.sort((a, b) => b - a);
+            // Generate clean, strictly decreasing timestamps so Firestore orders correctly
+            const baseTime = Date.now();
+            const batch = writeBatch(db);
+
+            newOrderIds.forEach((id, index) => {
+                const docRef = doc(db, "games", id);
+                // Guaranteed valid Date object: index 0 is newest, index 1 is older, etc.
+                const newTimestamp = new Date(baseTime - (index * 60000));
+                batch.update(docRef, { createdAt: newTimestamp });
+            });
 
             try {
-                const batch = writeBatch(db);
-                newOrderIds.forEach((id, index) => {
-                    const docRef = doc(db, "games", id);
-                    const newTimestamp = new Date(timestamps[index]);
-                    
-                    batch.update(docRef, { createdAt: newTimestamp });
-                    
-                    const arrayRef = loadedGamesList.find(g => g.id === id);
-                    if(arrayRef) arrayRef.data.createdAt = newTimestamp;
-                });
-                
                 await batch.commit();
-                // We let onSnapshot (if active) handle any remote discrepancies, 
-                // but the local DOM is already visually perfect, so no blinking!
+                console.log("New order successfully saved to Firebase!");
             } catch (error) {
-                alert("Error saving new order: " + error.message);
-                if(isMobileOrDataSaver()) loadGames(); // Re-fetch on error
+                console.error("Firebase writeBatch error:", error);
+                alert("Error saving order: " + error.message);
+                loadGames(); // Revert visual order on error
             }
         }
     });
@@ -385,12 +334,12 @@ async function deleteGameNode(id, title) {
     if (confirm(`Are you sure you want to delete "${title}"?`)) {
         try {
             await deleteDoc(doc(db, "games", id));
-            if (isMobileOrDataSaver()) loadGames();
+            loadGames();
         } catch (error) {
             alert("Error deleting: " + error.message);
         }
     }
 }
 
-// Initialize application on startup
+// Initialize application
 loadGames();
