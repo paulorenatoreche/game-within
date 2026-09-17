@@ -58,7 +58,6 @@ loginBtn.addEventListener('click', async () => {
             alert("Unauthorized account. Access restricted to Admin only.");
         }
     } catch (error) {
-        // Handle the specific error if you blocked new sign-ups in Firebase Console
         if (error.code === 'auth/admin-restricted-operation') {
             alert("Access Denied: New sign-ups are disabled for this app.");
         } else if (error.code !== 'auth/popup-closed-by-user') {
@@ -78,7 +77,6 @@ onAuthStateChanged(auth, (user) => {
         initSortable(); // Initialize drag and drop
     } else {
         if (user) {
-            // Force sign out if a non-admin user somehow persists in local storage
             signOut(auth);
         }
         isAdmin = false;
@@ -101,9 +99,7 @@ addGameBtn.addEventListener('click', () => {
     document.getElementById('modalTitle').innerText = "Add New Game";
     document.getElementById('submitBtn').innerText = "Save Game";
     
-    // Reset character counter
     charCount.innerText = "0 / 300 characters";
-    
     gameModal.classList.remove('hidden');
 });
 
@@ -114,12 +110,10 @@ shareBtn.addEventListener('click', () => {
     alert("Link copied! Anyone can view your library, but only you can edit it.");
 });
 
-// Update character counter on input
 gameReview.addEventListener('input', () => {
     charCount.innerText = `${gameReview.value.length} / 300 characters`;
 });
 
-// Lightbox behavior
 lightbox.addEventListener('click', () => {
     lightbox.classList.add('hidden');
     lightboxImg.src = '';
@@ -139,7 +133,6 @@ addGameForm.addEventListener('submit', async (e) => {
         let imageUrl = document.getElementById('gameOldCover').value;
         const file = document.getElementById('gameCover').files[0];
 
-        // Upload new image if provided
         if (file) {
             const storageRef = ref(storage, `covers/${Date.now()}_${file.name}`);
             await uploadBytes(storageRef, file);
@@ -158,10 +151,8 @@ addGameForm.addEventListener('submit', async (e) => {
         };
 
         if (id) {
-            // Edit existing game
             await updateDoc(doc(db, "games", id), gameData);
         } else {
-            // Add new game
             gameData.createdAt = new Date();
             await addDoc(collection(db, "games"), gameData);
         }
@@ -180,7 +171,7 @@ addGameForm.addEventListener('submit', async (e) => {
 // 4. LOAD & RENDER GAMES
 async function loadGames() {
     gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">Loading library...</td></tr>';
-    loadedGamesList = []; // Clear array
+    loadedGamesList = []; 
     
     try {
         const q = query(collection(db, "games"), orderBy("createdAt", "desc"));
@@ -206,15 +197,15 @@ async function loadGames() {
             // Build Admin Buttons HTML with Drag Handle
             const adminButtons = `
                 <div class="flex items-center justify-center gap-4">
-                    <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-xl transition" title="Drag to reorder"></i>
-                    <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-lg" title="Edit"><i class="fa-solid fa-pen"></i></button>
-                    <button class="delete-btn text-red-500 hover:text-red-400 transition text-lg" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab text-xl transition p-2" title="Drag to reorder"></i>
+                    <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-lg p-2" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="delete-btn text-red-500 hover:text-red-400 transition text-lg p-2" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </div>
             `;
 
             const tr = document.createElement('tr');
             tr.className = "hover:bg-gray-800/40 transition duration-200 group";
-            tr.setAttribute('data-id', docSnap.id); // Critical for reordering logic
+            tr.setAttribute('data-id', docSnap.id);
             
             tr.innerHTML = `
                 <td class="p-4 align-middle text-center">
@@ -248,7 +239,6 @@ async function loadGames() {
                 </td>
             `;
 
-            // Attach event listeners for this specific row
             tr.querySelector('.cover-img').addEventListener('click', (e) => {
                 lightboxImg.src = e.target.dataset.url;
                 lightbox.classList.remove('hidden');
@@ -268,7 +258,6 @@ async function loadGames() {
 }
 
 // 5. ADMIN FUNCTIONS
-
 function openEditModal(id, data) {
     document.getElementById('gameId').value = id;
     document.getElementById('gameOldCover').value = data.coverUrl;
@@ -280,10 +269,7 @@ function openEditModal(id, data) {
     document.getElementById('gameReview').value = data.review;
     document.querySelector(`input[name="verdict"][value="${data.verdict}"]`).checked = true;
     
-    // File input is optional on edit
     document.getElementById('gameCover').required = false; 
-
-    // Update character counter based on existing review length
     charCount.innerText = `${data.review.length} / 300 characters`;
 
     document.getElementById('modalTitle').innerText = "Edit Game";
@@ -291,40 +277,48 @@ function openEditModal(id, data) {
     gameModal.classList.remove('hidden');
 }
 
-// Drag and Drop Initialization
+// Drag and Drop Initialization (Silent Background Sync)
 function initSortable() {
-    if (sortableInstance) return; // Prevent multiple instances
+    if (sortableInstance) return; 
 
     sortableInstance = Sortable.create(gamesTableBody, {
-        handle: '.drag-handle', // Class of the element that triggers drag
-        animation: 150, // Smooth transition
-        ghostClass: 'sortable-ghost', // Styling for dropped item
+        handle: '.drag-handle', 
+        animation: 250, // Smooth slide animation
+        forceFallback: true, // IMPORTANT: Fixes native HTML5 table drag quirks (allows dragging to the very top edges)
+        fallbackClass: 'sortable-drag', // Class for the element following the mouse
+        ghostClass: 'sortable-ghost', // Class for the placeholder row
         onEnd: async function (evt) {
             if (evt.oldIndex === evt.newIndex) return;
 
-            // Get the new order of game IDs from the DOM
+            // Get the visual DOM order after the drop
             const rows = Array.from(gamesTableBody.querySelectorAll('tr[data-id]'));
             const newOrderIds = rows.map(row => row.dataset.id);
 
-            // Extract all current timestamps and sort them highest to lowest (newest to oldest)
+            // Get original timestamps and sort from highest (newest) to lowest (oldest)
             const timestamps = loadedGamesList.map(g => 
                 g.data.createdAt.toMillis ? g.data.createdAt.toMillis() : g.data.createdAt.getTime()
             );
             timestamps.sort((a, b) => b - a);
 
             try {
-                // Bulk update the documents in Firestore to match the new visual order
+                // Background Sync - Update Firestore without reloading the DOM
                 const batch = writeBatch(db);
                 newOrderIds.forEach((id, index) => {
                     const docRef = doc(db, "games", id);
-                    batch.update(docRef, { createdAt: new Date(timestamps[index]) });
+                    const newTimestamp = new Date(timestamps[index]);
+                    
+                    batch.update(docRef, { createdAt: newTimestamp });
+                    
+                    // Keep the local array in sync so consecutive drags work flawlessly
+                    const arrayRef = loadedGamesList.find(g => g.id === id);
+                    if(arrayRef) arrayRef.data.createdAt = newTimestamp;
                 });
                 
                 await batch.commit();
-                loadGames(); // Refresh the list state completely
+                // We purposefully DO NOT call loadGames() here to eliminate the page blinking
             } catch (error) {
                 alert("Error saving new order: " + error.message);
-                loadGames(); // Revert visual changes if error occurs
+                loadGames(); // Only reload if there was an actual error to revert visually
             }
         }
     });
