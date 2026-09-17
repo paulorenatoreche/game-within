@@ -44,31 +44,41 @@ const lightboxImg = document.getElementById('lightbox-img');
 let isAdmin = false;
 let loadedGamesList = []; // Array to hold current games for reordering
 
-// 1. AUTHENTICATION
+// 1. AUTHENTICATION (STRICT ADMIN ONLY)
 const provider = new GoogleAuthProvider();
 
-loginBtn.addEventListener('click', () => {
-    signInWithPopup(auth, provider).catch(error => alert("Login error: " + error.message));
+loginBtn.addEventListener('click', async () => {
+    try {
+        const result = await signInWithPopup(auth, provider);
+        
+        // Immediate check right after Google popup closes
+        if (result.user.uid !== ADMIN_UID) {
+            await signOut(auth);
+            alert("Unauthorized account. Access restricted to Admin only.");
+        }
+    } catch (error) {
+        // Handle the specific error if you blocked new sign-ups in Firebase Console
+        if (error.code === 'auth/admin-restricted-operation') {
+            alert("Access Denied: New sign-ups are disabled for this app.");
+        } else if (error.code !== 'auth/popup-closed-by-user') {
+            alert("Login error: " + error.message);
+        }
+    }
 });
 
 logoutBtn.addEventListener('click', () => signOut(auth));
 
 onAuthStateChanged(auth, (user) => {
-    if (user) {
-        // STRICT ADMIN CHECK: Only allow the predefined UID
-        if (user.uid === ADMIN_UID) {
-            isAdmin = true;
-            document.body.classList.add('is-admin');
-            loginBtn.style.display = 'none';
-        } else {
-            // Unauthorized User - Sign them out immediately
-            alert("Unauthorized account. You do not have permission to edit this library.");
-            signOut(auth);
-            isAdmin = false;
-            document.body.classList.remove('is-admin');
-            loginBtn.style.display = 'block';
-        }
+    // Secondary state listener check
+    if (user && user.uid === ADMIN_UID) {
+        isAdmin = true;
+        document.body.classList.add('is-admin');
+        loginBtn.style.display = 'none';
     } else {
+        if (user) {
+            // Force sign out if a non-admin user somehow persists in local storage
+            signOut(auth);
+        }
         isAdmin = false;
         document.body.classList.remove('is-admin');
         loginBtn.style.display = 'block';
