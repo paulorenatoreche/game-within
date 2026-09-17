@@ -26,8 +26,17 @@
         body.is-admin .admin-only { display: flex !important; }
         body.is-admin .admin-table-cell { display: table-cell !important; }
         
-        /* Drag and Drop Ghost Styling */
-        .sortable-ghost { opacity: 0.4; background-color: rgba(59, 130, 246, 0.2); }
+        /* Drag and Drop Styling (Fixed for smoothness) */
+        .sortable-ghost { 
+            opacity: 0.2 !important; 
+            background-color: #3b82f6 !important; 
+        }
+        .sortable-drag { 
+            background-color: #1e293b !important; /* Darker background while dragging */
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.8) !important;
+            cursor: grabbing !important;
+            opacity: 1 !important;
+        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
