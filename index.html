@@ -22,7 +22,7 @@
             padding: 3px 10px; 
             border-radius: 9999px; 
             font-weight: 600;
-            text-shadow: 0px 1px 2px rgba(0,0,0,0.5); /* Helps text readability */
+            text-shadow: 0px 1px 2px rgba(0,0,0,0.5);
         }
         
         /* Custom scrollbar for the table container */
@@ -52,8 +52,13 @@
 
     <!-- Header -->
     <header class="glass sticky top-0 z-40 px-6 py-4 flex justify-between items-center">
-        <h1 class="text-2xl font-bold tracking-wider text-blue-400">
+        <h1 class="text-2xl font-bold tracking-wider text-blue-400 flex items-center">
             <i class="fa-solid fa-gamepad mr-2"></i>_gameWithin
+            <!-- Live Status Indicator -->
+            <span id="liveIndicator" class="hidden ml-3 flex h-2.5 w-2.5 relative" title="Live Sync Active">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+            </span>
         </h1>
         <div class="flex gap-4">
             <button id="shareBtn" class="hover:text-blue-400 transition" title="Share Link">
