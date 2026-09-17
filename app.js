@@ -15,7 +15,7 @@ const firebaseConfig = {
 };
 
 // ==========================================
-// REPLACE WITH YOUR ACTUAL GOOGLE ACCOUNT UID
+// ADMIN GOOGLE ACCOUNT UID
 // ==========================================
 const ADMIN_UID = "ePaR8uYILlOa53Tns3RCpdgMgQf2"; 
 
@@ -44,6 +44,19 @@ const lightboxImg = document.getElementById('lightbox-img');
 let isAdmin = false;
 let loadedGamesList = []; // Array to hold current games for reordering
 let sortableInstance = null; // Holds the SortableJS instance
+
+// Helper Function: Generate consistent colors from strings
+function getPlatformColor(platformName) {
+    let hash = 0;
+    const str = platformName.trim().toLowerCase(); // Normalize string
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    // Hue (0-360) based on hash
+    const h = Math.abs(hash) % 360;
+    // Lock Saturation and Lightness to maintain good readability with white text
+    return `hsl(${h}, 70%, 40%)`;
+}
 
 // 1. AUTHENTICATION (STRICT ADMIN ONLY)
 const provider = new GoogleAuthProvider();
@@ -188,7 +201,11 @@ async function loadGames() {
             const data = docSnap.data();
             loadedGamesList.push({ id: docSnap.id, data: data });
             
-            const tagsHTML = data.platforms.map(p => `<span class="tag">${p}</span>`).join('');
+            // Generate Tags with Dynamic Colors based on string hash
+            const tagsHTML = data.platforms.map(p => {
+                const color = getPlatformColor(p);
+                return `<span class="tag shadow border border-white/20" style="background-color: ${color}">${p}</span>`;
+            }).join('');
             
             const verdictIcon = data.verdict === 'up' 
                 ? '<i class="fa-solid fa-thumbs-up text-green-400 text-2xl" title="Recommend"></i>' 
@@ -197,7 +214,7 @@ async function loadGames() {
             // Build Admin Buttons HTML with Drag Handle
             const adminButtons = `
                 <div class="flex items-center justify-center gap-4">
-                    <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab text-xl transition p-2" title="Drag to reorder"></i>
+                    <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-xl transition p-2" title="Drag to reorder"></i>
                     <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-lg p-2" title="Edit"><i class="fa-solid fa-pen"></i></button>
                     <button class="delete-btn text-red-500 hover:text-red-400 transition text-lg p-2" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </div>
@@ -283,25 +300,22 @@ function initSortable() {
 
     sortableInstance = Sortable.create(gamesTableBody, {
         handle: '.drag-handle', 
-        animation: 250, // Smooth slide animation
-        forceFallback: true, // IMPORTANT: Fixes native HTML5 table drag quirks (allows dragging to the very top edges)
-        fallbackClass: 'sortable-drag', // Class for the element following the mouse
-        ghostClass: 'sortable-ghost', // Class for the placeholder row
+        animation: 250, 
+        forceFallback: true, 
+        fallbackClass: 'sortable-drag', 
+        ghostClass: 'sortable-ghost', 
         onEnd: async function (evt) {
             if (evt.oldIndex === evt.newIndex) return;
 
-            // Get the visual DOM order after the drop
             const rows = Array.from(gamesTableBody.querySelectorAll('tr[data-id]'));
             const newOrderIds = rows.map(row => row.dataset.id);
 
-            // Get original timestamps and sort from highest (newest) to lowest (oldest)
             const timestamps = loadedGamesList.map(g => 
                 g.data.createdAt.toMillis ? g.data.createdAt.toMillis() : g.data.createdAt.getTime()
             );
             timestamps.sort((a, b) => b - a);
 
             try {
-                // Background Sync - Update Firestore without reloading the DOM
                 const batch = writeBatch(db);
                 newOrderIds.forEach((id, index) => {
                     const docRef = doc(db, "games", id);
@@ -309,16 +323,14 @@ function initSortable() {
                     
                     batch.update(docRef, { createdAt: newTimestamp });
                     
-                    // Keep the local array in sync so consecutive drags work flawlessly
                     const arrayRef = loadedGamesList.find(g => g.id === id);
                     if(arrayRef) arrayRef.data.createdAt = newTimestamp;
                 });
                 
                 await batch.commit();
-                // We purposefully DO NOT call loadGames() here to eliminate the page blinking
             } catch (error) {
                 alert("Error saving new order: " + error.message);
-                loadGames(); // Only reload if there was an actual error to revert visually
+                loadGames(); 
             }
         }
     });
