@@ -1,10 +1,10 @@
-// Importações do Firebase SDK Modular
+// Firebase SDK Imports (Modular)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, orderBy, query } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
-// COLE SUAS CONFIGURAÇÕES DO FIREBASE AQUI
+// YOUR FIREBASE CONFIGURATION
 const firebaseConfig = {
     apiKey: "AIzaSyA0am-MxYNuFNvcVo2AHBLEf3-5ymsVAhs",
     authDomain: "game-within.firebaseapp.com",
@@ -14,29 +14,36 @@ const firebaseConfig = {
     appId: "1:887478087985:web:5d3befd92e5f1cae1fc010"
 };
 
-// Inicialização
+// Initialization
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// Elementos da UI
+// UI Elements
 const loginBtn = document.getElementById('loginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const addGameBtn = document.getElementById('addGameBtn');
 const gameModal = document.getElementById('gameModal');
 const closeModalBtn = document.getElementById('closeModalBtn');
 const addGameForm = document.getElementById('addGameForm');
-const gamesGrid = document.getElementById('gamesGrid');
+const gamesTableBody = document.getElementById('gamesTableBody');
 const shareBtn = document.getElementById('shareBtn');
+const gameReview = document.getElementById('gameReview');
+const charCount = document.getElementById('charCount');
+
+// Lightbox Elements
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightbox-img');
 
 let isAdmin = false;
+let loadedGamesList = []; // Array to hold current games for reordering
 
-// 1. AUTENTICAÇÃO
+// 1. AUTHENTICATION
 const provider = new GoogleAuthProvider();
 
 loginBtn.addEventListener('click', () => {
-    signInWithPopup(auth, provider).catch(error => alert("Erro ao logar: " + error.message));
+    signInWithPopup(auth, provider).catch(error => alert("Login error: " + error.message));
 });
 
 logoutBtn.addEventListener('click', () => signOut(auth));
@@ -44,122 +51,250 @@ logoutBtn.addEventListener('click', () => signOut(auth));
 onAuthStateChanged(auth, (user) => {
     if (user) {
         isAdmin = true;
-        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
+        document.body.classList.add('is-admin');
         loginBtn.style.display = 'none';
-        console.log("Seu UID para as regras do Firebase é:", user.uid); // GUARDE ESSE CÓDIGO
     } else {
         isAdmin = false;
-        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+        document.body.classList.remove('is-admin');
         loginBtn.style.display = 'block';
     }
+    loadGames(); // Reload to show/hide admin controls on rows
 });
 
-// 2. MODAL & COMPARTILHAMENTO
-addGameBtn.addEventListener('click', () => gameModal.classList.remove('hidden'));
+// 2. MODALS, LIGHTBOX & SHARING
+addGameBtn.addEventListener('click', () => {
+    addGameForm.reset();
+    document.getElementById('gameId').value = '';
+    document.getElementById('gameOldCover').value = '';
+    document.getElementById('gameCover').required = true;
+    document.getElementById('modalTitle').innerText = "Add New Game";
+    document.getElementById('submitBtn').innerText = "Save Game";
+    
+    // Reset character counter
+    charCount.innerText = "0 / 300 characters";
+    
+    gameModal.classList.remove('hidden');
+});
+
 closeModalBtn.addEventListener('click', () => gameModal.classList.add('hidden'));
 
 shareBtn.addEventListener('click', () => {
     navigator.clipboard.writeText(window.location.href);
-    alert("Link copiado! Qualquer um pode ver sua biblioteca, mas só você pode editar.");
+    alert("Link copied! Anyone can view your library, but only you can edit it.");
 });
 
-// 3. ADICIONAR JOGO
+// Update character counter on input
+gameReview.addEventListener('input', () => {
+    charCount.innerText = `${gameReview.value.length} / 300 characters`;
+});
+
+// Lightbox behavior
+lightbox.addEventListener('click', () => {
+    lightbox.classList.add('hidden');
+    lightboxImg.src = '';
+});
+
+// 3. ADD OR EDIT GAME (FORM SUBMIT)
 addGameForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!isAdmin) return alert("Não autorizado!");
+    if (!isAdmin) return alert("Unauthorized!");
 
-    const btnSubmit = addGameForm.querySelector('button[type="submit"]');
-    btnSubmit.innerText = "Salvando...";
+    const btnSubmit = document.getElementById('submitBtn');
+    btnSubmit.innerText = "Saving...";
     btnSubmit.disabled = true;
 
     try {
-        // Upload da Imagem
+        const id = document.getElementById('gameId').value;
+        let imageUrl = document.getElementById('gameOldCover').value;
         const file = document.getElementById('gameCover').files[0];
-        const storageRef = ref(storage, `covers/${Date.now()}_${file.name}`);
-        await uploadBytes(storageRef, file);
-        const imageUrl = await getDownloadURL(storageRef);
 
-        // Salvar no Firestore
-        await addDoc(collection(db, "games"), {
+        // Upload new image if provided
+        if (file) {
+            const storageRef = ref(storage, `covers/${Date.now()}_${file.name}`);
+            await uploadBytes(storageRef, file);
+            imageUrl = await getDownloadURL(storageRef);
+        }
+
+        const gameData = {
             title: document.getElementById('gameTitle').value,
             coverUrl: imageUrl,
             platforms: document.getElementById('gamePlatforms').value.split(',').map(p => p.trim()),
-            hours: Number(document.getElementById('gameHours').value),
-            rating: Number(document.getElementById('gameRating').value),
+            hours: parseFloat(document.getElementById('gameHours').value),
+            rating: parseFloat(document.getElementById('gameRating').value),
+            year: parseInt(document.getElementById('gameYear').value),
             review: document.getElementById('gameReview').value,
-            verdict: document.querySelector('input[name="verdict"]:checked').value,
-            createdAt: new Date()
-        });
+            verdict: document.querySelector('input[name="verdict"]:checked').value
+        };
 
-        alert("Jogo salvo com sucesso!");
+        if (id) {
+            // Edit existing game
+            await updateDoc(doc(db, "games", id), gameData);
+        } else {
+            // Add new game
+            gameData.createdAt = new Date();
+            await addDoc(collection(db, "games"), gameData);
+        }
+
         addGameForm.reset();
         gameModal.classList.add('hidden');
-        loadGames(); // Recarrega a lista
+        loadGames(); 
     } catch (error) {
-        alert("Erro ao salvar: " + error.message);
+        alert("Error saving: " + error.message);
     } finally {
-        btnSubmit.innerText = "Salvar Jogo";
+        btnSubmit.innerText = "Save Game";
         btnSubmit.disabled = false;
     }
 });
 
-// 4. CARREGAR E RENDERIZAR JOGOS
+// 4. LOAD & RENDER GAMES
 async function loadGames() {
-    gamesGrid.innerHTML = '<p class="text-gray-400">Carregando biblioteca...</p>';
+    gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">Loading library...</td></tr>';
+    loadedGamesList = []; // Clear array
     
     try {
         const q = query(collection(db, "games"), orderBy("createdAt", "desc"));
         const querySnapshot = await getDocs(q);
         
-        gamesGrid.innerHTML = ''; // Limpa grid
+        gamesTableBody.innerHTML = ''; 
 
         if(querySnapshot.empty) {
-            gamesGrid.innerHTML = '<p class="text-gray-400">Nenhum jogo cadastrado ainda.</p>';
+            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">No games added yet.</td></tr>';
             return;
         }
 
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
+        querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            loadedGamesList.push({ id: docSnap.id, data: data });
             
-            // Gerar ícones nerd baseado na nota (🤓)
-            let nerds = '';
-            for(let i=0; i<data.rating; i++) nerds += '🤓 ';
-
-            // Gerar Tags
             const tagsHTML = data.platforms.map(p => `<span class="tag">${p}</span>`).join('');
             
-            // Veredito
             const verdictIcon = data.verdict === 'up' 
-                ? '<i class="fa-solid fa-thumbs-up text-green-400 text-xl" title="Recomendo"></i>' 
-                : '<i class="fa-solid fa-thumbs-down text-red-400 text-xl" title="Não Recomendo"></i>';
+                ? '<i class="fa-solid fa-thumbs-up text-green-400 text-2xl" title="Recommend"></i>' 
+                : '<i class="fa-solid fa-thumbs-down text-red-400 text-2xl" title="Don\'t Recommend"></i>';
 
-            // HTML do Card
-            const card = document.createElement('div');
-            card.className = "bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700 flex flex-col hover:border-blue-500 transition";
-            card.innerHTML = `
-                <div class="h-48 overflow-hidden relative">
-                    <img src="${data.coverUrl}" alt="${data.title}" class="w-full h-full object-cover">
-                    <div class="absolute top-2 right-2 bg-black/70 px-2 py-1 rounded text-sm font-bold border border-gray-600">
-                        <i class="fa-solid fa-clock mr-1 text-gray-400"></i>${data.hours}h
+            // Build Admin Buttons HTML
+            const adminButtons = `
+                <div class="flex items-center justify-center gap-3">
+                    <button class="edit-btn text-blue-400 hover:text-blue-300 transition" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <div class="flex flex-col gap-1">
+                        <button class="up-btn text-gray-400 hover:text-white transition text-xs" title="Move Up"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button class="down-btn text-gray-400 hover:text-white transition text-xs" title="Move Down"><i class="fa-solid fa-chevron-down"></i></button>
                     </div>
-                </div>
-                <div class="p-5 flex-grow flex flex-col">
-                    <h3 class="text-xl font-bold text-white mb-2">${data.title}</h3>
-                    <div class="flex flex-wrap gap-2 mb-4">${tagsHTML}</div>
-                    <p class="text-gray-400 text-sm flex-grow mb-4 italic">"${data.review}"</p>
-                    <div class="flex justify-between items-center border-t border-gray-700 pt-4 mt-auto">
-                        <div class="text-lg">${nerds}</div>
-                        <div>${verdictIcon}</div>
-                    </div>
+                    <button class="delete-btn text-red-500 hover:text-red-400 transition" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </div>
             `;
-            gamesGrid.appendChild(card);
+
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-gray-800/40 transition duration-200 group";
+            tr.innerHTML = `
+                <td class="p-4 align-middle text-center">
+                    <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-24 mx-auto aspect-[3/4] object-cover rounded shadow-md border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
+                </td>
+                <td class="p-4 align-middle text-center">
+                    <h3 class="text-xl font-bold text-white mb-2 leading-tight">${data.title}</h3>
+                    <div class="flex flex-wrap justify-center gap-1.5">${tagsHTML}</div>
+                </td>
+                <td class="p-4 align-middle text-center">
+                    <span class="text-gray-300 font-mono text-lg bg-gray-800 px-3 py-1 rounded-lg border border-gray-700">
+                        <i class="fa-regular fa-clock text-gray-500 mr-1 text-sm"></i>${Number(data.hours).toFixed(1)}h
+                    </span>
+                </td>
+                <td class="p-4 align-middle text-center">
+                    <div class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-md">
+                        ${Number(data.rating).toFixed(1)}
+                    </div>
+                </td>
+                <td class="p-4 align-middle">
+                    <p class="text-gray-400 text-sm italic leading-relaxed">"${data.review}"</p>
+                </td>
+                <td class="p-4 align-middle text-center">
+                    <span class="text-gray-300 font-bold tracking-wider">${data.year || '-'}</span>
+                </td>
+                <td class="p-4 align-middle text-center">
+                    ${verdictIcon}
+                </td>
+                <td class="p-4 align-middle text-center admin-only admin-table-cell hidden">
+                    ${adminButtons}
+                </td>
+            `;
+
+            // Attach event listeners for this specific row
+            tr.querySelector('.cover-img').addEventListener('click', (e) => {
+                lightboxImg.src = e.target.dataset.url;
+                lightbox.classList.remove('hidden');
+            });
+
+            if (isAdmin) {
+                tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(docSnap.id, data));
+                tr.querySelector('.up-btn').addEventListener('click', () => moveGame(docSnap.id, 'up'));
+                tr.querySelector('.down-btn').addEventListener('click', () => moveGame(docSnap.id, 'down'));
+                tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(docSnap.id, data.title));
+            }
+
+            gamesTableBody.appendChild(tr);
         });
     } catch (error) {
-        console.error("Erro ao carregar jogos:", error);
-        gamesGrid.innerHTML = '<p class="text-red-400">Erro ao carregar a biblioteca.</p>';
+        console.error("Error loading games:", error);
+        gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-red-400">Error loading the library.</td></tr>';
     }
 }
 
-// Inicializa a aplicação carregando os jogos
+// 5. ADMIN FUNCTIONS
+
+function openEditModal(id, data) {
+    document.getElementById('gameId').value = id;
+    document.getElementById('gameOldCover').value = data.coverUrl;
+    document.getElementById('gameTitle').value = data.title;
+    document.getElementById('gamePlatforms').value = data.platforms.join(', ');
+    document.getElementById('gameHours').value = data.hours;
+    document.getElementById('gameRating').value = data.rating;
+    document.getElementById('gameYear').value = data.year || new Date().getFullYear();
+    document.getElementById('gameReview').value = data.review;
+    document.querySelector(`input[name="verdict"][value="${data.verdict}"]`).checked = true;
+    
+    // File input is optional on edit
+    document.getElementById('gameCover').required = false; 
+
+    // Update character counter based on existing review length
+    charCount.innerText = `${data.review.length} / 300 characters`;
+
+    document.getElementById('modalTitle').innerText = "Edit Game";
+    document.getElementById('submitBtn').innerText = "Update Game";
+    gameModal.classList.remove('hidden');
+}
+
+async function moveGame(id, direction) {
+    const index = loadedGamesList.findIndex(g => g.id === id);
+    if (index === -1) return;
+
+    let swapIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    // Check if move is out of bounds
+    if (swapIndex < 0 || swapIndex >= loadedGamesList.length) return; 
+
+    const currentDoc = loadedGamesList[index];
+    const swapDoc = loadedGamesList[swapIndex];
+
+    try {
+        // Swap timestamps to reorder without breaking sorting logic
+        await updateDoc(doc(db, "games", currentDoc.id), { createdAt: swapDoc.data.createdAt });
+        await updateDoc(doc(db, "games", swapDoc.id), { createdAt: currentDoc.data.createdAt });
+        loadGames(); // Refresh table
+    } catch (error) {
+        alert("Error reordering: " + error.message);
+    }
+}
+
+async function deleteGameNode(id, title) {
+    if (confirm(`Are you sure you want to delete "${title}"?`)) {
+        try {
+            await deleteDoc(doc(db, "games", id));
+            loadGames();
+        } catch (error) {
+            alert("Error deleting: " + error.message);
+        }
+    }
+}
+
+// Initialize application
 loadGames();
