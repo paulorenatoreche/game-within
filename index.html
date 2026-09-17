@@ -14,7 +14,16 @@
     <style>
         body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
         .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
-        .tag { background: #3b82f6; color: white; font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; }
+        
+        /* Updated Tag Styling (Dynamic colors handled by JS) */
+        .tag { 
+            color: white; 
+            font-size: 0.75rem; 
+            padding: 3px 10px; 
+            border-radius: 9999px; 
+            font-weight: 600;
+            text-shadow: 0px 1px 2px rgba(0,0,0,0.5); /* Helps text readability */
+        }
         
         /* Custom scrollbar for the table container */
         .table-scroll::-webkit-scrollbar { height: 8px; }
@@ -26,13 +35,13 @@
         body.is-admin .admin-only { display: flex !important; }
         body.is-admin .admin-table-cell { display: table-cell !important; }
         
-        /* Drag and Drop Styling (Fixed for smoothness) */
+        /* Drag and Drop Styling */
         .sortable-ghost { 
             opacity: 0.2 !important; 
             background-color: #3b82f6 !important; 
         }
         .sortable-drag { 
-            background-color: #1e293b !important; /* Darker background while dragging */
+            background-color: #1e293b !important; 
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.8) !important;
             cursor: grabbing !important;
             opacity: 1 !important;
