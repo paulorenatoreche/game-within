@@ -1,7 +1,7 @@
 // Firebase SDK Imports (Modular)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // YOUR FIREBASE CONFIGURATION
@@ -43,6 +43,7 @@ const lightboxImg = document.getElementById('lightbox-img');
 
 let isAdmin = false;
 let loadedGamesList = []; // Array to hold current games for reordering
+let sortableInstance = null; // Holds the SortableJS instance
 
 // 1. AUTHENTICATION (STRICT ADMIN ONLY)
 const provider = new GoogleAuthProvider();
@@ -74,6 +75,7 @@ onAuthStateChanged(auth, (user) => {
         isAdmin = true;
         document.body.classList.add('is-admin');
         loginBtn.style.display = 'none';
+        initSortable(); // Initialize drag and drop
     } else {
         if (user) {
             // Force sign out if a non-admin user somehow persists in local storage
@@ -82,6 +84,10 @@ onAuthStateChanged(auth, (user) => {
         isAdmin = false;
         document.body.classList.remove('is-admin');
         loginBtn.style.display = 'block';
+        if (sortableInstance) {
+            sortableInstance.destroy();
+            sortableInstance = null;
+        }
     }
     loadGames(); // Reload to show/hide admin controls on rows
 });
@@ -197,20 +203,19 @@ async function loadGames() {
                 ? '<i class="fa-solid fa-thumbs-up text-green-400 text-2xl" title="Recommend"></i>' 
                 : '<i class="fa-solid fa-thumbs-down text-red-400 text-2xl" title="Don\'t Recommend"></i>';
 
-            // Build Admin Buttons HTML
+            // Build Admin Buttons HTML with Drag Handle
             const adminButtons = `
-                <div class="flex items-center justify-center gap-3">
-                    <button class="edit-btn text-blue-400 hover:text-blue-300 transition" title="Edit"><i class="fa-solid fa-pen"></i></button>
-                    <div class="flex flex-col gap-1">
-                        <button class="up-btn text-gray-400 hover:text-white transition text-xs" title="Move Up"><i class="fa-solid fa-chevron-up"></i></button>
-                        <button class="down-btn text-gray-400 hover:text-white transition text-xs" title="Move Down"><i class="fa-solid fa-chevron-down"></i></button>
-                    </div>
-                    <button class="delete-btn text-red-500 hover:text-red-400 transition" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                <div class="flex items-center justify-center gap-4">
+                    <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-xl transition" title="Drag to reorder"></i>
+                    <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-lg" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="delete-btn text-red-500 hover:text-red-400 transition text-lg" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </div>
             `;
 
             const tr = document.createElement('tr');
             tr.className = "hover:bg-gray-800/40 transition duration-200 group";
+            tr.setAttribute('data-id', docSnap.id); // Critical for reordering logic
+            
             tr.innerHTML = `
                 <td class="p-4 align-middle text-center">
                     <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-24 mx-auto aspect-[3/4] object-cover rounded shadow-md border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
@@ -251,8 +256,6 @@ async function loadGames() {
 
             if (isAdmin) {
                 tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(docSnap.id, data));
-                tr.querySelector('.up-btn').addEventListener('click', () => moveGame(docSnap.id, 'up'));
-                tr.querySelector('.down-btn').addEventListener('click', () => moveGame(docSnap.id, 'down'));
                 tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(docSnap.id, data.title));
             }
 
@@ -288,26 +291,43 @@ function openEditModal(id, data) {
     gameModal.classList.remove('hidden');
 }
 
-async function moveGame(id, direction) {
-    const index = loadedGamesList.findIndex(g => g.id === id);
-    if (index === -1) return;
+// Drag and Drop Initialization
+function initSortable() {
+    if (sortableInstance) return; // Prevent multiple instances
 
-    let swapIndex = direction === 'up' ? index - 1 : index + 1;
-    
-    // Check if move is out of bounds
-    if (swapIndex < 0 || swapIndex >= loadedGamesList.length) return; 
+    sortableInstance = Sortable.create(gamesTableBody, {
+        handle: '.drag-handle', // Class of the element that triggers drag
+        animation: 150, // Smooth transition
+        ghostClass: 'sortable-ghost', // Styling for dropped item
+        onEnd: async function (evt) {
+            if (evt.oldIndex === evt.newIndex) return;
 
-    const currentDoc = loadedGamesList[index];
-    const swapDoc = loadedGamesList[swapIndex];
+            // Get the new order of game IDs from the DOM
+            const rows = Array.from(gamesTableBody.querySelectorAll('tr[data-id]'));
+            const newOrderIds = rows.map(row => row.dataset.id);
 
-    try {
-        // Swap timestamps to reorder without breaking sorting logic
-        await updateDoc(doc(db, "games", currentDoc.id), { createdAt: swapDoc.data.createdAt });
-        await updateDoc(doc(db, "games", swapDoc.id), { createdAt: currentDoc.data.createdAt });
-        loadGames(); // Refresh table
-    } catch (error) {
-        alert("Error reordering: " + error.message);
-    }
+            // Extract all current timestamps and sort them highest to lowest (newest to oldest)
+            const timestamps = loadedGamesList.map(g => 
+                g.data.createdAt.toMillis ? g.data.createdAt.toMillis() : g.data.createdAt.getTime()
+            );
+            timestamps.sort((a, b) => b - a);
+
+            try {
+                // Bulk update the documents in Firestore to match the new visual order
+                const batch = writeBatch(db);
+                newOrderIds.forEach((id, index) => {
+                    const docRef = doc(db, "games", id);
+                    batch.update(docRef, { createdAt: new Date(timestamps[index]) });
+                });
+                
+                await batch.commit();
+                loadGames(); // Refresh the list state completely
+            } catch (error) {
+                alert("Error saving new order: " + error.message);
+                loadGames(); // Revert visual changes if error occurs
+            }
+        }
+    });
 }
 
 async function deleteGameNode(id, title) {
