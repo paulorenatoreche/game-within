@@ -8,6 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SortableJS for Drag and Drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    
     <style>
         body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
         .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
@@ -22,6 +25,9 @@
         .admin-only { display: none !important; }
         body.is-admin .admin-only { display: flex !important; }
         body.is-admin .admin-table-cell { display: table-cell !important; }
+        
+        /* Drag and Drop Ghost Styling */
+        .sortable-ghost { opacity: 0.4; background-color: rgba(59, 130, 246, 0.2); }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -65,7 +71,7 @@
                             <th class="p-4 text-gray-400 font-semibold w-1/3">Review</th>
                             <th class="p-4 text-gray-400 font-semibold text-center">Year</th>
                             <th class="p-4 text-gray-400 font-semibold text-center">Verdict</th>
-                            <th class="p-4 text-gray-400 font-semibold text-center admin-only admin-table-cell hidden">Admin</th>
+                            <th class="p-4 text-gray-400 font-semibold text-center admin-only admin-table-cell hidden w-32">Admin</th>
                         </tr>
                     </thead>
                     <tbody id="gamesTableBody" class="divide-y divide-gray-800/50">
