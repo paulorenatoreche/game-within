@@ -1,7 +1,8 @@
 // Firebase SDK Imports (Modular)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+// Notice we imported onSnapshot here!
+import { getFirestore, collection, addDoc, getDocs, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // YOUR FIREBASE CONFIGURATION
@@ -36,25 +37,36 @@ const gamesTableBody = document.getElementById('gamesTableBody');
 const shareBtn = document.getElementById('shareBtn');
 const gameReview = document.getElementById('gameReview');
 const charCount = document.getElementById('charCount');
+const liveIndicator = document.getElementById('liveIndicator');
 
 // Lightbox Elements
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
 
 let isAdmin = false;
-let loadedGamesList = []; // Array to hold current games for reordering
-let sortableInstance = null; // Holds the SortableJS instance
+let loadedGamesList = []; 
+let sortableInstance = null; 
+let unsubscribeSnapshot = null;
+let isDragging = false; // Flag to prevent UI re-renders during active drag
 
-// Helper Function: Generate consistent colors from strings
+// Data Saver & Mobile Detection
+function isMobileOrDataSaver() {
+    // Check if network implies cellular or data saving mode
+    if (navigator.connection && (navigator.connection.saveData || navigator.connection.type === 'cellular')) {
+        return true;
+    }
+    // Check if device is small screen or mobile OS
+    return /Mobi|Android|iPhone/i.test(navigator.userAgent) || window.innerWidth <= 768;
+}
+
+// Generate consistent colors from strings
 function getPlatformColor(platformName) {
     let hash = 0;
-    const str = platformName.trim().toLowerCase(); // Normalize string
+    const str = platformName.trim().toLowerCase();
     for (let i = 0; i < str.length; i++) {
         hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
-    // Hue (0-360) based on hash
     const h = Math.abs(hash) % 360;
-    // Lock Saturation and Lightness to maintain good readability with white text
     return `hsl(${h}, 70%, 40%)`;
 }
 
@@ -64,8 +76,6 @@ const provider = new GoogleAuthProvider();
 loginBtn.addEventListener('click', async () => {
     try {
         const result = await signInWithPopup(auth, provider);
-        
-        // Immediate check right after Google popup closes
         if (result.user.uid !== ADMIN_UID) {
             await signOut(auth);
             alert("Unauthorized account. Access restricted to Admin only.");
@@ -82,16 +92,13 @@ loginBtn.addEventListener('click', async () => {
 logoutBtn.addEventListener('click', () => signOut(auth));
 
 onAuthStateChanged(auth, (user) => {
-    // Secondary state listener check
     if (user && user.uid === ADMIN_UID) {
         isAdmin = true;
         document.body.classList.add('is-admin');
         loginBtn.style.display = 'none';
-        initSortable(); // Initialize drag and drop
+        initSortable(); 
     } else {
-        if (user) {
-            signOut(auth);
-        }
+        if (user) signOut(auth);
         isAdmin = false;
         document.body.classList.remove('is-admin');
         loginBtn.style.display = 'block';
@@ -100,7 +107,6 @@ onAuthStateChanged(auth, (user) => {
             sortableInstance = null;
         }
     }
-    loadGames(); // Reload to show/hide admin controls on rows
 });
 
 // 2. MODALS, LIGHTBOX & SHARING
@@ -172,7 +178,11 @@ addGameForm.addEventListener('submit', async (e) => {
 
         addGameForm.reset();
         gameModal.classList.add('hidden');
-        loadGames(); 
+        
+        // If not on Live mode, manually reload. Otherwise, onSnapshot handles it automatically!
+        if (isMobileOrDataSaver()) {
+            loadGames(); 
+        }
     } catch (error) {
         alert("Error saving: " + error.message);
     } finally {
@@ -181,96 +191,122 @@ addGameForm.addEventListener('submit', async (e) => {
     }
 });
 
-// 4. LOAD & RENDER GAMES
+// 4. LOAD & RENDER GAMES (Data Saver vs Live Sync)
 async function loadGames() {
-    gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">Loading library...</td></tr>';
-    loadedGamesList = []; 
+    const q = query(collection(db, "games"), orderBy("createdAt", "desc"));
     
-    try {
-        const q = query(collection(db, "games"), orderBy("createdAt", "desc"));
-        const querySnapshot = await getDocs(q);
+    if (isMobileOrDataSaver()) {
+        // [DATA SAVER MODE] - Standard one-time fetch
+        liveIndicator.classList.add('hidden');
+        try {
+            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">Loading library...</td></tr>';
+            const querySnapshot = await getDocs(q);
+            renderGamesHTML(querySnapshot);
+        } catch (error) {
+            console.error("Error:", error);
+            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-red-400">Error loading.</td></tr>';
+        }
+    } else {
+        // [LIVE SYNC MODE] - Realtime WebSocket
+        liveIndicator.classList.remove('hidden');
+        if (unsubscribeSnapshot) unsubscribeSnapshot();
         
-        gamesTableBody.innerHTML = ''; 
+        unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
+            // Ignore re-renders if the admin is actively dragging an item to prevent UI glitches
+            if (!isDragging) {
+                renderGamesHTML(querySnapshot);
+            }
+        }, (error) => {
+            console.error("Live Sync Error:", error);
+        });
+    }
+}
 
-        if(querySnapshot.empty) {
-            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">No games added yet.</td></tr>';
-            return;
+// Split rendering into its own function so both Modes can use it cleanly
+function renderGamesHTML(querySnapshot) {
+    loadedGamesList = []; 
+    gamesTableBody.innerHTML = ''; 
+
+    if(querySnapshot.empty) {
+        gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">No games added yet.</td></tr>';
+        return;
+    }
+
+    querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        loadedGamesList.push({ id: docSnap.id, data: data });
+        
+        const tagsHTML = data.platforms.map(p => {
+            const color = getPlatformColor(p);
+            return `<span class="tag shadow border border-white/20" style="background-color: ${color}">${p}</span>`;
+        }).join('');
+        
+        const verdictIcon = data.verdict === 'up' 
+            ? '<i class="fa-solid fa-thumbs-up text-green-400 text-2xl" title="Recommend"></i>' 
+            : '<i class="fa-solid fa-thumbs-down text-red-400 text-2xl" title="Don\'t Recommend"></i>';
+
+        const adminButtons = `
+            <div class="flex items-center justify-center gap-4">
+                <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-xl transition p-2" title="Drag to reorder"></i>
+                <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-lg p-2" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                <button class="delete-btn text-red-500 hover:text-red-400 transition text-lg p-2" title="Delete"><i class="fa-solid fa-trash"></i></button>
+            </div>
+        `;
+
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-gray-800/40 transition duration-200 group";
+        tr.setAttribute('data-id', docSnap.id);
+        
+        tr.innerHTML = `
+            <td class="p-4 align-middle text-center">
+                <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-24 mx-auto aspect-[3/4] object-cover rounded shadow-md border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
+            </td>
+            <td class="p-4 align-middle text-center">
+                <h3 class="text-xl font-bold text-white mb-2 leading-tight">${data.title}</h3>
+                <div class="flex flex-wrap justify-center gap-1.5">${tagsHTML}</div>
+            </td>
+            <td class="p-4 align-middle text-center">
+                <span class="text-gray-300 font-mono text-lg bg-gray-800 px-3 py-1 rounded-lg border border-gray-700">
+                    <i class="fa-regular fa-clock text-gray-500 mr-1 text-sm"></i>${Number(data.hours).toFixed(1)}h
+                </span>
+            </td>
+            <td class="p-4 align-middle text-center">
+                <div class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-md">
+                    ${Number(data.rating).toFixed(1)}
+                </div>
+            </td>
+            <td class="p-4 align-middle">
+                <p class="text-gray-400 text-sm italic leading-relaxed">"${data.review}"</p>
+            </td>
+            <td class="p-4 align-middle text-center">
+                <span class="text-gray-300 font-bold tracking-wider">${data.year || '-'}</span>
+            </td>
+            <td class="p-4 align-middle text-center">
+                ${verdictIcon}
+            </td>
+            <td class="p-4 align-middle text-center admin-only admin-table-cell hidden">
+                ${adminButtons}
+            </td>
+        `;
+
+        tr.querySelector('.cover-img').addEventListener('click', (e) => {
+            lightboxImg.src = e.target.dataset.url;
+            lightbox.classList.remove('hidden');
+        });
+
+        if (isAdmin) {
+            tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(docSnap.id, data));
+            tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(docSnap.id, data.title));
         }
 
-        querySnapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            loadedGamesList.push({ id: docSnap.id, data: data });
-            
-            // Generate Tags with Dynamic Colors based on string hash
-            const tagsHTML = data.platforms.map(p => {
-                const color = getPlatformColor(p);
-                return `<span class="tag shadow border border-white/20" style="background-color: ${color}">${p}</span>`;
-            }).join('');
-            
-            const verdictIcon = data.verdict === 'up' 
-                ? '<i class="fa-solid fa-thumbs-up text-green-400 text-2xl" title="Recommend"></i>' 
-                : '<i class="fa-solid fa-thumbs-down text-red-400 text-2xl" title="Don\'t Recommend"></i>';
+        gamesTableBody.appendChild(tr);
+    });
 
-            // Build Admin Buttons HTML with Drag Handle
-            const adminButtons = `
-                <div class="flex items-center justify-center gap-4">
-                    <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-xl transition p-2" title="Drag to reorder"></i>
-                    <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-lg p-2" title="Edit"><i class="fa-solid fa-pen"></i></button>
-                    <button class="delete-btn text-red-500 hover:text-red-400 transition text-lg p-2" title="Delete"><i class="fa-solid fa-trash"></i></button>
-                </div>
-            `;
-
-            const tr = document.createElement('tr');
-            tr.className = "hover:bg-gray-800/40 transition duration-200 group";
-            tr.setAttribute('data-id', docSnap.id);
-            
-            tr.innerHTML = `
-                <td class="p-4 align-middle text-center">
-                    <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-24 mx-auto aspect-[3/4] object-cover rounded shadow-md border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
-                </td>
-                <td class="p-4 align-middle text-center">
-                    <h3 class="text-xl font-bold text-white mb-2 leading-tight">${data.title}</h3>
-                    <div class="flex flex-wrap justify-center gap-1.5">${tagsHTML}</div>
-                </td>
-                <td class="p-4 align-middle text-center">
-                    <span class="text-gray-300 font-mono text-lg bg-gray-800 px-3 py-1 rounded-lg border border-gray-700">
-                        <i class="fa-regular fa-clock text-gray-500 mr-1 text-sm"></i>${Number(data.hours).toFixed(1)}h
-                    </span>
-                </td>
-                <td class="p-4 align-middle text-center">
-                    <div class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-md">
-                        ${Number(data.rating).toFixed(1)}
-                    </div>
-                </td>
-                <td class="p-4 align-middle">
-                    <p class="text-gray-400 text-sm italic leading-relaxed">"${data.review}"</p>
-                </td>
-                <td class="p-4 align-middle text-center">
-                    <span class="text-gray-300 font-bold tracking-wider">${data.year || '-'}</span>
-                </td>
-                <td class="p-4 align-middle text-center">
-                    ${verdictIcon}
-                </td>
-                <td class="p-4 align-middle text-center admin-only admin-table-cell hidden">
-                    ${adminButtons}
-                </td>
-            `;
-
-            tr.querySelector('.cover-img').addEventListener('click', (e) => {
-                lightboxImg.src = e.target.dataset.url;
-                lightbox.classList.remove('hidden');
-            });
-
-            if (isAdmin) {
-                tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(docSnap.id, data));
-                tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(docSnap.id, data.title));
-            }
-
-            gamesTableBody.appendChild(tr);
-        });
-    } catch (error) {
-        console.error("Error loading games:", error);
-        gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-red-400">Error loading the library.</td></tr>';
+    // Re-bind Sortable after re-render if admin is logged in
+    if (isAdmin && !isDragging) {
+        if (sortableInstance) sortableInstance.destroy();
+        sortableInstance = null;
+        initSortable();
     }
 }
 
@@ -294,7 +330,7 @@ function openEditModal(id, data) {
     gameModal.classList.remove('hidden');
 }
 
-// Drag and Drop Initialization (Silent Background Sync)
+// Drag and Drop Initialization
 function initSortable() {
     if (sortableInstance) return; 
 
@@ -303,8 +339,15 @@ function initSortable() {
         animation: 250, 
         forceFallback: true, 
         fallbackClass: 'sortable-drag', 
-        ghostClass: 'sortable-ghost', 
+        ghostClass: 'sortable-ghost',
+        
+        onStart: function () {
+            // Pause live updates to prevent DOM reset while dragging
+            isDragging = true; 
+        },
         onEnd: async function (evt) {
+            isDragging = false; // Drag finished
+
             if (evt.oldIndex === evt.newIndex) return;
 
             const rows = Array.from(gamesTableBody.querySelectorAll('tr[data-id]'));
@@ -328,9 +371,11 @@ function initSortable() {
                 });
                 
                 await batch.commit();
+                // We let onSnapshot (if active) handle any remote discrepancies, 
+                // but the local DOM is already visually perfect, so no blinking!
             } catch (error) {
                 alert("Error saving new order: " + error.message);
-                loadGames(); 
+                if(isMobileOrDataSaver()) loadGames(); // Re-fetch on error
             }
         }
     });
@@ -340,12 +385,12 @@ async function deleteGameNode(id, title) {
     if (confirm(`Are you sure you want to delete "${title}"?`)) {
         try {
             await deleteDoc(doc(db, "games", id));
-            loadGames();
+            if (isMobileOrDataSaver()) loadGames();
         } catch (error) {
             alert("Error deleting: " + error.message);
         }
     }
 }
 
-// Initialize application
+// Initialize application on startup
 loadGames();
