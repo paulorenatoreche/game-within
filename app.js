@@ -64,6 +64,25 @@ function isMobileOrDataSaver() {
     return /Mobi|Android|iPhone/i.test(navigator.userAgent) || window.innerWidth <= 768;
 }
 
+// Helpers: Format Review Text (Newlines and Clickable Links)
+function formatReview(text) {
+    if (!text) return "";
+    
+    // 1. Escape HTML to prevent XSS
+    let html = text.replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+    })[m]);
+    
+    // 2. Convert URLs to clickable links
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    html = html.replace(urlRegex, url => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline pointer-events-auto cursor-pointer">${url}</a>`;
+    });
+    
+    // 3. Convert newlines to <br> tags
+    return html.replace(/\n/g, '<br>');
+}
+
 // Helpers: HSL to Hex Converter for Hash Generation
 function hslToHex(h, s, l) {
     l /= 100;
@@ -91,7 +110,7 @@ function getPlatformColorConfig(platformName) {
     if (customTagColors[name]) {
         return { bg: customTagColors[name].bg, text: customTagColors[name].text };
     }
-    return { bg: getHashColorHex(name), text: "#ffffff" }; // Default white text
+    return { bg: getHashColorHex(name), text: "#ffffff" }; 
 }
 
 // Fetch Global Tag Colors once
@@ -102,7 +121,7 @@ async function fetchTagColors() {
             customTagColors = docSnap.data();
         }
     } catch (e) {
-        console.error("Error loading tag colors. Check Firestore Rules for /settings/", e);
+        console.error("Error loading tag colors. Check Firestore Rules.", e);
     }
     tagColorsFetched = true;
 }
@@ -180,9 +199,8 @@ lightbox.addEventListener('click', () => {
 // TAG COLOR MANAGEMENT (ADMIN ONLY)
 // ==========================================
 manageTagsBtn.addEventListener('click', () => {
-    tagListContainer.innerHTML = ''; // Clear container
+    tagListContainer.innerHTML = ''; 
 
-    // Extract all unique tags currently loaded
     const uniqueTags = new Set();
     loadedGamesList.forEach(g => {
         g.data.platforms.forEach(p => uniqueTags.add(p.trim()));
@@ -196,7 +214,7 @@ manageTagsBtn.addEventListener('click', () => {
 
     sortedTags.forEach(tag => {
         const colorConfig = getPlatformColorConfig(tag);
-        const cleanTag = tag.replace(/"/g, '&quot;'); // Sanitize for HTML
+        const cleanTag = tag.replace(/"/g, '&quot;'); 
 
         const row = document.createElement('div');
         row.className = 'flex items-center justify-between bg-gray-800/80 p-3 rounded border border-gray-700';
@@ -240,11 +258,9 @@ saveTagsBtn.addEventListener('click', async () => {
 
     try {
         await setDoc(doc(db, "settings", "tagColors"), newColorSettings);
-        customTagColors = newColorSettings; // Update local config
+        customTagColors = newColorSettings; 
         tagSettingsModal.classList.add('hidden');
-        
-        // Trigger re-render to apply new colors instantly
-        loadGames();
+        loadGames(); // Trigger re-render to apply new colors instantly
     } catch (error) {
         alert("Error saving colors: " + error.message + "\n\nMake sure you updated your Firebase Rules to allow writing to /settings/");
     } finally {
@@ -305,7 +321,6 @@ addGameForm.addEventListener('submit', async (e) => {
 
 // 4. LOAD & RENDER GAMES
 async function loadGames() {
-    // Ensure tag colors are loaded before rendering
     if (!tagColorsFetched) await fetchTagColors();
 
     const q = query(collection(db, "games"), orderBy("createdAt", "desc"));
@@ -361,6 +376,7 @@ function renderGamesHTML(querySnapshot) {
         tr.className = "hover:bg-gray-800/40 transition duration-200 group";
         tr.setAttribute('data-id', docSnap.id);
         
+        // Use formatReview to inject newlines and links safely
         tr.innerHTML = `
             <td class="p-2 sm:p-3 align-middle text-center">
                 <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
@@ -380,7 +396,7 @@ function renderGamesHTML(querySnapshot) {
                 </div>
             </td>
             <td class="p-2 sm:p-3 align-middle">
-                <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-3 sm:line-clamp-none">"${data.review}"</p>
+                <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-3 sm:line-clamp-none">"${formatReview(data.review)}"</p>
             </td>
             <td class="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
                 <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
@@ -420,7 +436,8 @@ function openEditModal(id, data) {
     document.getElementById('gameHours').value = data.hours;
     document.getElementById('gameRating').value = data.rating;
     document.getElementById('gameYear').value = data.year || new Date().getFullYear();
-    document.getElementById('gameReview').value = data.review;
+    // Use raw review data for the textarea
+    document.getElementById('gameReview').value = data.review; 
     document.querySelector(`input[name="verdict"][value="${data.verdict}"]`).checked = true;
     
     document.getElementById('gameCover').required = false; 
