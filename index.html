@@ -16,7 +16,6 @@
         .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
         
         .tag { 
-            color: white; 
             font-size: 0.7rem; 
             padding: 2px 8px; 
             border-radius: 9999px; 
@@ -26,7 +25,7 @@
         }
         
         /* Custom scrollbar */
-        .table-scroll::-webkit-scrollbar { height: 6px; }
+        .table-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
         .table-scroll::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
         .table-scroll::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 4px; }
 
@@ -58,6 +57,9 @@
         <div class="flex items-center gap-4">
             <button id="shareBtn" class="hover:text-blue-400 transition" title="Share Link">
                 <i class="fa-solid fa-share-nodes text-lg sm:text-xl"></i>
+            </button>
+            <button id="manageTagsBtn" class="hover:text-blue-400 transition text-sm admin-only" title="Manage Tag Colors">
+                <i class="fa-solid fa-tags"></i>
             </button>
             <button id="loginBtn" class="hover:text-blue-400 transition text-sm opacity-50" title="Admin Login">
                 <i class="fa-solid fa-lock"></i>
@@ -103,12 +105,11 @@
 
     <!-- Add/Edit Game Modal -->
     <div id="gameModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-3 sm:p-4">
-        <div class="glass w-full max-w-lg rounded-xl p-5 sm:p-6 relative max-h-[92vh] overflow-y-auto">
+        <div class="glass w-full max-w-lg rounded-xl p-5 sm:p-6 relative max-h-[92vh] overflow-y-auto table-scroll">
             <button id="closeModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
             <h2 id="modalTitle" class="text-lg sm:text-xl font-bold mb-4">Add New Game</h2>
             
             <form id="addGameForm" class="flex flex-col gap-3.5">
-                <!-- Hidden inputs for Edit mode -->
                 <input type="hidden" id="gameId">
                 <input type="hidden" id="gameOldCover">
 
@@ -116,7 +117,7 @@
                 
                 <div class="bg-blue-900/20 border border-blue-800/50 p-3 rounded">
                     <label class="block text-xs sm:text-sm mb-1 text-blue-300 font-semibold">Cover Image</label>
-                    <p class="text-[11px] text-gray-400 mb-2">Use <strong>portrait format</strong>. (Leave empty if editing and keeping the same image).</p>
+                    <p class="text-[11px] text-gray-400 mb-2">Use <strong>portrait format</strong>.</p>
                     <input type="file" id="gameCover" accept="image/*" class="w-full text-xs sm:text-sm text-gray-300">
                 </div>
 
@@ -151,6 +152,22 @@
 
                 <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded mt-1 transition text-sm sm:text-base">Save Game</button>
             </form>
+        </div>
+    </div>
+
+    <!-- Manage Tags Modal -->
+    <div id="tagSettingsModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-3 sm:p-4">
+        <div class="glass w-full max-w-lg rounded-xl p-5 sm:p-6 relative max-h-[92vh] flex flex-col">
+            <button id="closeTagModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <h2 class="text-lg sm:text-xl font-bold mb-4">Manage Tag Colors</h2>
+            
+            <p class="text-xs text-gray-400 mb-4">Customize the background and text color for each platform. Changes apply to all games immediately.</p>
+            
+            <div id="tagListContainer" class="flex-grow overflow-y-auto table-scroll mb-4 pr-2 space-y-2">
+                <!-- Tag color inputs injected here via JS -->
+            </div>
+            
+            <button id="saveTagsBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded transition text-sm sm:text-base w-full">Save All Colors</button>
         </div>
     </div>
 
