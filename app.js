@@ -25,14 +25,30 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// UI Elements
+// Tabs & Main UI Containers
+const tabPlayedBtn = document.getElementById('tabPlayedBtn');
+const tabWorkedBtn = document.getElementById('tabWorkedBtn');
+const tablePlayedContainer = document.getElementById('tablePlayedContainer');
+const tableWorkedContainer = document.getElementById('tableWorkedContainer');
+const gamesTableBody = document.getElementById('gamesTableBody');
+const workedTableBody = document.getElementById('workedTableBody');
+
+// Form Specific Containers
+const hoursContainer = document.getElementById('hoursContainer');
+const ratingContainer = document.getElementById('ratingContainer');
+const verdictContainer = document.getElementById('verdictContainer');
+const statsGrid = document.getElementById('statsGrid');
+const reviewLabel = document.getElementById('reviewLabel');
+const gameHours = document.getElementById('gameHours');
+const gameRating = document.getElementById('gameRating');
+
+// General UI Elements
 const loginBtn = document.getElementById('loginBtn');
 const logoutBtn = document.getElementById('logoutBtn');
 const addGameBtn = document.getElementById('addGameBtn');
 const gameModal = document.getElementById('gameModal');
 const closeModalBtn = document.getElementById('closeModalBtn');
 const addGameForm = document.getElementById('addGameForm');
-const gamesTableBody = document.getElementById('gamesTableBody');
 const shareBtn = document.getElementById('shareBtn');
 const gameReview = document.getElementById('gameReview');
 const charCount = document.getElementById('charCount');
@@ -48,42 +64,38 @@ const saveTagsBtn = document.getElementById('saveTagsBtn');
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
 
+// State Variables
 let isAdmin = false;
 let loadedGamesList = []; 
 let sortableInstance = null; 
 let unsubscribeSnapshot = null;
 let isDragging = false; 
+let currentTab = 'played'; // Tracks which tab is active ('played' or 'worked')
 
 // Global Custom Colors Object
 let customTagColors = {}; 
 let tagColorsFetched = false;
 
-// Helpers: Mobile Detection
+// ==========================================
+// UTILITY HELPERS
+// ==========================================
 function isMobileOrDataSaver() {
     if (navigator.connection && (navigator.connection.saveData || navigator.connection.type === 'cellular')) return true;
     return /Mobi|Android|iPhone/i.test(navigator.userAgent) || window.innerWidth <= 768;
 }
 
-// Helpers: Format Review Text (Newlines and Clickable Links)
 function formatReview(text) {
     if (!text) return "";
-    
-    // 1. Escape HTML to prevent XSS
     let html = text.replace(/[&<>"']/g, m => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
     })[m]);
-    
-    // 2. Convert URLs to clickable links
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     html = html.replace(urlRegex, url => {
         return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline pointer-events-auto cursor-pointer">${url}</a>`;
     });
-    
-    // 3. Convert newlines to <br> tags
     return html.replace(/\n/g, '<br>');
 }
 
-// Helpers: HSL to Hex Converter for Hash Generation
 function hslToHex(h, s, l) {
     l /= 100;
     const a = s * Math.min(l, 1 - l) / 100;
@@ -95,16 +107,14 @@ function hslToHex(h, s, l) {
     return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-// Generate consistent HEX color mathematically from string
 function getHashColorHex(platformName) {
     let hash = 0;
     const str = platformName.trim().toLowerCase();
     for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
     const h = Math.abs(hash) % 360;
-    return hslToHex(h, 70, 40); // 70% Saturation, 40% Lightness
+    return hslToHex(h, 70, 40); 
 }
 
-// Get Color (Custom from Database OR Auto-Generated Hash)
 function getPlatformColorConfig(platformName) {
     const name = platformName.trim();
     if (customTagColors[name]) {
@@ -113,7 +123,6 @@ function getPlatformColorConfig(platformName) {
     return { bg: getHashColorHex(name), text: "#ffffff" }; 
 }
 
-// Fetch Global Tag Colors once
 async function fetchTagColors() {
     try {
         const docSnap = await getDoc(doc(db, "settings", "tagColors"));
@@ -121,12 +130,79 @@ async function fetchTagColors() {
             customTagColors = docSnap.data();
         }
     } catch (e) {
-        console.error("Error loading tag colors. Check Firestore Rules.", e);
+        console.error("Error loading tag colors.", e);
     }
     tagColorsFetched = true;
 }
 
+// ==========================================
+// TABS LOGIC
+// ==========================================
+function switchTab(tab) {
+    currentTab = tab;
+    if (tab === 'played') {
+        // Style Active Tab
+        tabPlayedBtn.classList.replace('text-gray-500', 'text-blue-400');
+        tabPlayedBtn.classList.replace('hover:text-gray-300', 'border-blue-400');
+        tabPlayedBtn.classList.replace('font-semibold', 'font-bold');
+        
+        // Style Inactive Tab
+        tabWorkedBtn.classList.replace('text-blue-400', 'text-gray-500');
+        tabWorkedBtn.classList.replace('border-blue-400', 'hover:text-gray-300');
+        tabWorkedBtn.classList.replace('font-bold', 'font-semibold');
+
+        // Toggle Tables
+        tablePlayedContainer.classList.remove('hidden');
+        tablePlayedContainer.classList.add('block');
+        tableWorkedContainer.classList.remove('block');
+        tableWorkedContainer.classList.add('hidden');
+    } else {
+        // Style Active Tab
+        tabWorkedBtn.classList.replace('text-gray-500', 'text-blue-400');
+        tabWorkedBtn.classList.replace('hover:text-gray-300', 'border-blue-400');
+        tabWorkedBtn.classList.replace('font-semibold', 'font-bold');
+
+        // Style Inactive Tab
+        tabPlayedBtn.classList.replace('text-blue-400', 'text-gray-500');
+        tabPlayedBtn.classList.replace('border-blue-400', 'hover:text-gray-300');
+        tabPlayedBtn.classList.replace('font-bold', 'font-semibold');
+
+        // Toggle Tables
+        tableWorkedContainer.classList.remove('hidden');
+        tableWorkedContainer.classList.add('block');
+        tablePlayedContainer.classList.remove('block');
+        tablePlayedContainer.classList.add('hidden');
+    }
+    loadGames(); // Refresh the table with the proper collection
+}
+
+tabPlayedBtn.addEventListener('click', () => switchTab('played'));
+tabWorkedBtn.addEventListener('click', () => switchTab('worked'));
+
+// Adjust the Modal UI depending on the active tab
+function prepareModalForTab(tab) {
+    if (tab === 'played') {
+        hoursContainer.classList.remove('hidden');
+        ratingContainer.classList.remove('hidden');
+        verdictContainer.classList.remove('hidden');
+        statsGrid.className = "grid grid-cols-3 gap-2";
+        reviewLabel.innerText = "Review (Max 300 chars)";
+        gameHours.required = true;
+        gameRating.required = true;
+    } else {
+        hoursContainer.classList.add('hidden');
+        ratingContainer.classList.add('hidden');
+        verdictContainer.classList.add('hidden');
+        statsGrid.className = "grid grid-cols-1 gap-2";
+        reviewLabel.innerText = "Service Provided (Max 300 chars)";
+        gameHours.required = false;
+        gameRating.required = false;
+    }
+}
+
+// ==========================================
 // 1. AUTHENTICATION (STRICT ADMIN ONLY)
+// ==========================================
 const provider = new GoogleAuthProvider();
 
 loginBtn.addEventListener('click', async () => {
@@ -166,16 +242,19 @@ onAuthStateChanged(auth, (user) => {
     loadGames(); 
 });
 
+// ==========================================
 // 2. MODALS & SHARING
+// ==========================================
 addGameBtn.addEventListener('click', () => {
     addGameForm.reset();
     document.getElementById('gameId').value = '';
     document.getElementById('gameOldCover').value = '';
     document.getElementById('gameCover').required = true;
-    document.getElementById('modalTitle').innerText = "Add New Game";
-    document.getElementById('submitBtn').innerText = "Save Game";
+    document.getElementById('modalTitle').innerText = currentTab === 'played' ? "Add New Game" : "Add Professional Work";
+    document.getElementById('submitBtn').innerText = "Save Entry";
     
     charCount.innerText = "0 / 300 characters";
+    prepareModalForTab(currentTab);
     gameModal.classList.remove('hidden');
 });
 
@@ -198,15 +277,27 @@ lightbox.addEventListener('click', () => {
 // ==========================================
 // TAG COLOR MANAGEMENT (ADMIN ONLY)
 // ==========================================
-manageTagsBtn.addEventListener('click', () => {
-    tagListContainer.innerHTML = ''; 
+manageTagsBtn.addEventListener('click', async () => {
+    tagListContainer.innerHTML = '<p class="text-sm text-gray-400">Loading platforms...</p>'; 
+    tagSettingsModal.classList.remove('hidden');
 
     const uniqueTags = new Set();
-    loadedGamesList.forEach(g => {
-        g.data.platforms.forEach(p => uniqueTags.add(p.trim()));
-    });
+    
+    try {
+        // Fetch from BOTH collections to ensure all tags are visible to edit
+        const [playedSnap, workedSnap] = await Promise.all([
+            getDocs(collection(db, "games")),
+            getDocs(collection(db, "worked_games"))
+        ]);
+        
+        playedSnap.forEach(g => g.data().platforms.forEach(p => uniqueTags.add(p.trim())));
+        workedSnap.forEach(g => g.data().platforms.forEach(p => uniqueTags.add(p.trim())));
+    } catch (e) {
+        console.error("Error fetching tags for manager", e);
+    }
 
     const sortedTags = Array.from(uniqueTags).sort((a, b) => a.localeCompare(b));
+    tagListContainer.innerHTML = ''; 
 
     if (sortedTags.length === 0) {
         tagListContainer.innerHTML = '<p class="text-sm text-gray-400">No platforms found. Add some games first!</p>';
@@ -233,8 +324,6 @@ manageTagsBtn.addEventListener('click', () => {
         `;
         tagListContainer.appendChild(row);
     });
-
-    tagSettingsModal.classList.remove('hidden');
 });
 
 closeTagModalBtn.addEventListener('click', () => tagSettingsModal.classList.add('hidden'));
@@ -269,7 +358,9 @@ saveTagsBtn.addEventListener('click', async () => {
     }
 });
 
+// ==========================================
 // 3. ADD OR EDIT GAME (FORM SUBMIT)
+// ==========================================
 addGameForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!isAdmin) return alert("Unauthorized! You are not logged in as the admin.");
@@ -289,22 +380,29 @@ addGameForm.addEventListener('submit', async (e) => {
             imageUrl = await getDownloadURL(storageRef);
         }
 
+        // Base Data (Common for both tabs)
         const gameData = {
             title: document.getElementById('gameTitle').value,
             coverUrl: imageUrl,
             platforms: document.getElementById('gamePlatforms').value.split(',').map(p => p.trim()),
-            hours: parseFloat(document.getElementById('gameHours').value),
-            rating: parseFloat(document.getElementById('gameRating').value),
             year: parseInt(document.getElementById('gameYear').value),
             review: document.getElementById('gameReview').value,
-            verdict: document.querySelector('input[name="verdict"]:checked').value
         };
 
+        // Specific Data
+        if (currentTab === 'played') {
+            gameData.hours = parseFloat(document.getElementById('gameHours').value);
+            gameData.rating = parseFloat(document.getElementById('gameRating').value);
+            gameData.verdict = document.querySelector('input[name="verdict"]:checked').value;
+        }
+
+        const collectionName = currentTab === 'played' ? "games" : "worked_games";
+
         if (id) {
-            await updateDoc(doc(db, "games", id), gameData);
+            await updateDoc(doc(db, collectionName, id), gameData);
         } else {
             gameData.createdAt = new Date();
-            await addDoc(collection(db, "games"), gameData);
+            await addDoc(collection(db, collectionName), gameData);
         }
 
         addGameForm.reset();
@@ -314,25 +412,28 @@ addGameForm.addEventListener('submit', async (e) => {
     } catch (error) {
         alert("Error saving: " + error.message);
     } finally {
-        btnSubmit.innerText = "Save Game";
+        btnSubmit.innerText = "Save Entry";
         btnSubmit.disabled = false;
     }
 });
 
+// ==========================================
 // 4. LOAD & RENDER GAMES
+// ==========================================
 async function loadGames() {
     if (!tagColorsFetched) await fetchTagColors();
 
-    const q = query(collection(db, "games"), orderBy("createdAt", "desc"));
+    const collectionName = currentTab === 'played' ? "games" : "worked_games";
+    const q = query(collection(db, collectionName), orderBy("createdAt", "desc"));
     
     if (isMobileOrDataSaver()) {
         try {
-            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">Loading library...</td></tr>';
+            renderLoadingRow();
             const querySnapshot = await getDocs(q);
             renderGamesHTML(querySnapshot);
         } catch (error) {
             console.error("Error:", error);
-            gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-red-400">Error loading.</td></tr>';
+            renderErrorRow();
         }
     } else {
         if (unsubscribeSnapshot) unsubscribeSnapshot();
@@ -342,12 +443,23 @@ async function loadGames() {
     }
 }
 
+function renderLoadingRow() {
+    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
+    targetBody.innerHTML = `<tr><td colspan="${currentTab === 'played' ? 8 : 5}" class="p-6 text-center text-gray-400">Loading library...</td></tr>`;
+}
+
+function renderErrorRow() {
+    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
+    targetBody.innerHTML = `<tr><td colspan="${currentTab === 'played' ? 8 : 5}" class="p-6 text-center text-red-400">Error loading.</td></tr>`;
+}
+
 function renderGamesHTML(querySnapshot) {
     loadedGamesList = []; 
-    gamesTableBody.innerHTML = ''; 
+    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
+    targetBody.innerHTML = ''; 
 
     if(querySnapshot.empty) {
-        gamesTableBody.innerHTML = '<tr><td colspan="8" class="p-6 text-center text-gray-400">No games added yet.</td></tr>';
+        targetBody.innerHTML = `<tr><td colspan="${currentTab === 'played' ? 8 : 5}" class="p-6 text-center text-gray-400">No games added yet.</td></tr>`;
         return;
     }
 
@@ -360,10 +472,6 @@ function renderGamesHTML(querySnapshot) {
             return `<span class="tag shadow border border-white/20" style="background-color: ${colorConfig.bg}; color: ${colorConfig.text}">${p}</span>`;
         }).join('');
         
-        const verdictIcon = data.verdict === 'up' 
-            ? '<i class="fa-solid fa-thumbs-up text-green-400 text-lg sm:text-2xl" title="Recommend"></i>' 
-            : '<i class="fa-solid fa-thumbs-down text-red-400 text-lg sm:text-2xl" title="Don\'t Recommend"></i>';
-
         const adminButtons = `
             <div class="flex items-center justify-center gap-2 sm:gap-3">
                 <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-base sm:text-lg transition p-1.5" title="Drag to reorder"></i>
@@ -376,38 +484,63 @@ function renderGamesHTML(querySnapshot) {
         tr.className = "hover:bg-gray-800/40 transition duration-200 group";
         tr.setAttribute('data-id', docSnap.id);
         
-        // Use formatReview to inject newlines and links safely
-        tr.innerHTML = `
-            <td class="p-2 sm:p-3 align-middle text-center">
-                <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
-            </td>
-            <td class="p-2 sm:p-3 align-middle text-center">
-                <h3 class="text-sm sm:text-base font-bold text-white mb-1.5 leading-snug">${data.title}</h3>
-                <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
-            </td>
-            <td class="p-2 sm:p-3 align-middle text-center">
-                <span class="inline-flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm bg-gray-800 px-2 py-1 rounded border border-gray-700 whitespace-nowrap shrink-0">
-                    <i class="fa-regular fa-clock text-gray-500 mr-1"></i>${Number(data.hours).toFixed(1)}h
-                </span>
-            </td>
-            <td class="p-2 sm:p-3 align-middle text-center">
-                <div class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-sm">
-                    ${Number(data.rating).toFixed(1)}
-                </div>
-            </td>
-            <td class="p-2 sm:p-3 align-middle">
-                <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-3 sm:line-clamp-none">"${formatReview(data.review)}"</p>
-            </td>
-            <td class="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
-                <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
-            </td>
-            <td class="p-2 sm:p-3 align-middle text-center">
-                ${verdictIcon}
-            </td>
-            <td class="p-2 sm:p-3 align-middle text-center admin-only admin-table-cell hidden">
-                ${adminButtons}
-            </td>
-        `;
+        if (currentTab === 'played') {
+            const verdictIcon = data.verdict === 'up' 
+                ? '<i class="fa-solid fa-thumbs-up text-green-400 text-lg sm:text-2xl" title="Recommend"></i>' 
+                : '<i class="fa-solid fa-thumbs-down text-red-400 text-lg sm:text-2xl" title="Don\'t Recommend"></i>';
+
+            tr.innerHTML = `
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <h3 class="text-sm sm:text-base font-bold text-white mb-1.5 leading-snug">${data.title}</h3>
+                    <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <span class="inline-flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm bg-gray-800 px-2 py-1 rounded border border-gray-700 whitespace-nowrap shrink-0">
+                        <i class="fa-regular fa-clock text-gray-500 mr-1"></i>${Number(data.hours).toFixed(1)}h
+                    </span>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <div class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-sm">
+                        ${Number(data.rating).toFixed(1)}
+                    </div>
+                </td>
+                <td class="p-2 sm:p-3 align-middle">
+                    <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-3 sm:line-clamp-none">"${formatReview(data.review)}"</p>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
+                    <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    ${verdictIcon}
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center admin-only admin-table-cell hidden">
+                    ${adminButtons}
+                </td>
+            `;
+        } else {
+            // Worked Tab HTML Layout
+            tr.innerHTML = `
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center">
+                    <h3 class="text-sm sm:text-base font-bold text-white mb-1.5 leading-snug">${data.title}</h3>
+                    <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
+                </td>
+                <td class="p-2 sm:p-3 align-middle">
+                    <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-3 sm:line-clamp-none">"${formatReview(data.review)}"</p>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
+                    <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
+                </td>
+                <td class="p-2 sm:p-3 align-middle text-center admin-only admin-table-cell hidden">
+                    ${adminButtons}
+                </td>
+            `;
+        }
 
         tr.querySelector('.cover-img').addEventListener('click', (e) => {
             lightboxImg.src = e.target.dataset.url;
@@ -419,7 +552,7 @@ function renderGamesHTML(querySnapshot) {
             tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(docSnap.id, data.title));
         }
 
-        gamesTableBody.appendChild(tr);
+        targetBody.appendChild(tr);
     });
 
     if (isAdmin && !isDragging) {
@@ -427,24 +560,30 @@ function renderGamesHTML(querySnapshot) {
     }
 }
 
+// ==========================================
 // 5. ADMIN FUNCTIONS
+// ==========================================
 function openEditModal(id, data) {
+    prepareModalForTab(currentTab);
+    
     document.getElementById('gameId').value = id;
     document.getElementById('gameOldCover').value = data.coverUrl;
     document.getElementById('gameTitle').value = data.title;
     document.getElementById('gamePlatforms').value = data.platforms.join(', ');
-    document.getElementById('gameHours').value = data.hours;
-    document.getElementById('gameRating').value = data.rating;
     document.getElementById('gameYear').value = data.year || new Date().getFullYear();
-    // Use raw review data for the textarea
-    document.getElementById('gameReview').value = data.review; 
-    document.querySelector(`input[name="verdict"][value="${data.verdict}"]`).checked = true;
+    document.getElementById('gameReview').value = data.review;
+    
+    if (currentTab === 'played') {
+        document.getElementById('gameHours').value = data.hours;
+        document.getElementById('gameRating').value = data.rating;
+        document.querySelector(`input[name="verdict"][value="${data.verdict}"]`).checked = true;
+    }
     
     document.getElementById('gameCover').required = false; 
     charCount.innerText = `${data.review.length} / 300 characters`;
 
-    document.getElementById('modalTitle').innerText = "Edit Game";
-    document.getElementById('submitBtn').innerText = "Update Game";
+    document.getElementById('modalTitle').innerText = currentTab === 'played' ? "Edit Game" : "Edit Professional Work";
+    document.getElementById('submitBtn').innerText = "Update Entry";
     gameModal.classList.remove('hidden');
 }
 
@@ -455,7 +594,10 @@ function initSortable() {
         sortableInstance = null;
     }
 
-    sortableInstance = Sortable.create(gamesTableBody, {
+    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
+    const collectionName = currentTab === 'played' ? "games" : "worked_games";
+
+    sortableInstance = Sortable.create(targetBody, {
         handle: '.drag-handle', 
         animation: 200, 
         forceFallback: true, 
@@ -470,14 +612,14 @@ function initSortable() {
 
             if (evt.oldIndex === evt.newIndex) return;
 
-            const rows = Array.from(gamesTableBody.querySelectorAll('tr[data-id]'));
+            const rows = Array.from(targetBody.querySelectorAll('tr[data-id]'));
             const newOrderIds = rows.map(row => row.dataset.id);
 
             const baseTime = Date.now();
             const batch = writeBatch(db);
 
             newOrderIds.forEach((id, index) => {
-                const docRef = doc(db, "games", id);
+                const docRef = doc(db, collectionName, id);
                 const newTimestamp = new Date(baseTime - (index * 60000));
                 batch.update(docRef, { createdAt: newTimestamp });
             });
@@ -495,7 +637,8 @@ function initSortable() {
 async function deleteGameNode(id, title) {
     if (confirm(`Are you sure you want to delete "${title}"?`)) {
         try {
-            await deleteDoc(doc(db, "games", id));
+            const collectionName = currentTab === 'played' ? "games" : "worked_games";
+            await deleteDoc(doc(db, collectionName, id));
             if (isMobileOrDataSaver()) loadGames();
         } catch (error) {
             alert("Error deleting: " + error.message);
