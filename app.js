@@ -67,14 +67,12 @@ const lightboxImg = document.getElementById('lightbox-img');
 // State Variables
 let isAdmin = false;
 let loadedGamesList = []; 
-let sortableInstance = null; 
 let unsubscribeSnapshot = null;
-let isDragging = false; 
 let currentTab = 'played'; 
 
 // Sorting State Variables
-let currentSortCol = null; // 'title', 'rating', 'year'
-let currentSortDir = 'desc'; // 'asc', 'desc'
+let currentSortCol = null; 
+let currentSortDir = 'desc'; 
 
 // Global Custom Colors Object
 let customTagColors = {}; 
@@ -83,11 +81,6 @@ let tagColorsFetched = false;
 // ==========================================
 // UTILITY HELPERS
 // ==========================================
-function isMobileOrDataSaver() {
-    if (navigator.connection && (navigator.connection.saveData || navigator.connection.type === 'cellular')) return true;
-    return /Mobi|Android|iPhone/i.test(navigator.userAgent) || window.innerWidth <= 768;
-}
-
 function formatReview(text) {
     if (!text) return "";
     let html = text.replace(/[&<>"']/g, m => ({
@@ -144,7 +137,7 @@ async function fetchTagColors() {
 // ==========================================
 function switchTab(tab) {
     currentTab = tab;
-    currentSortCol = null; // Reset sort state when changing tabs
+    currentSortCol = null; 
     currentSortDir = 'desc';
 
     if (tab === 'played') {
@@ -209,30 +202,28 @@ function setupSortingListeners() {
     document.querySelectorAll('.sortable-col').forEach(th => {
         th.addEventListener('click', () => {
             const col = th.getAttribute('data-sort');
+            
+            // Toggle direction if clicking the same column, else start fresh
             if (currentSortCol === col) {
-                // Toggle direction
                 currentSortDir = currentSortDir === 'desc' ? 'asc' : 'desc';
             } else {
-                // Set new column sort
                 currentSortCol = col;
-                // Default: text alphabetically asc, numbers desc
                 currentSortDir = col === 'title' ? 'asc' : 'desc';
             }
+            
             updateSortIcons();
-            renderFromList(); // Re-render the loaded list immediately
+            renderFromList();
         });
     });
 }
 
 function updateSortIcons() {
-    // Reset all icons to default state
     document.querySelectorAll('.sort-icon').forEach(icon => {
         icon.className = 'fa-solid fa-sort ml-1 text-gray-600'; 
     });
     
     if (!currentSortCol) return;
 
-    // Apply active state to current column in the visible table
     const activeContainer = currentTab === 'played' ? tablePlayedContainer : tableWorkedContainer;
     const th = activeContainer.querySelector(`th[data-sort="${currentSortCol}"]`);
     
@@ -274,16 +265,11 @@ onAuthStateChanged(auth, (user) => {
         isAdmin = true;
         document.body.classList.add('is-admin');
         loginBtn.style.display = 'none';
-        if (!isMobileOrDataSaver() && !currentSortCol) initSortable(); 
     } else {
         if (user) signOut(auth);
         isAdmin = false;
         document.body.classList.remove('is-admin');
         loginBtn.style.display = 'block';
-        if (sortableInstance) {
-            sortableInstance.destroy();
-            sortableInstance = null;
-        }
     }
     loadGames(); 
 });
@@ -450,8 +436,6 @@ addGameForm.addEventListener('submit', async (e) => {
 
         addGameForm.reset();
         gameModal.classList.add('hidden');
-        
-        if (isMobileOrDataSaver()) loadGames(); 
     } catch (error) {
         alert("Error saving: " + error.message);
     } finally {
@@ -469,31 +453,11 @@ async function loadGames() {
     const collectionName = currentTab === 'played' ? "games" : "worked_games";
     const q = query(collection(db, collectionName), orderBy("createdAt", "desc"));
     
-    if (isMobileOrDataSaver()) {
-        try {
-            renderLoadingRow();
-            const querySnapshot = await getDocs(q);
-            processSnapshot(querySnapshot);
-        } catch (error) {
-            console.error("Error:", error);
-            renderErrorRow();
-        }
-    } else {
-        if (unsubscribeSnapshot) unsubscribeSnapshot();
-        unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
-            if (!isDragging) processSnapshot(querySnapshot);
-        }, (error) => console.error("Live Sync Error:", error));
-    }
-}
-
-function renderLoadingRow() {
-    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
-    targetBody.innerHTML = `<tr><td colspan="${currentTab === 'played' ? 8 : 5}" class="p-6 text-center text-gray-400">Loading library...</td></tr>`;
-}
-
-function renderErrorRow() {
-    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
-    targetBody.innerHTML = `<tr><td colspan="${currentTab === 'played' ? 8 : 5}" class="p-6 text-center text-red-400">Error loading.</td></tr>`;
+    if (unsubscribeSnapshot) unsubscribeSnapshot();
+    
+    unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
+        processSnapshot(querySnapshot);
+    }, (error) => console.error("Live Sync Error:", error));
 }
 
 function processSnapshot(querySnapshot) {
@@ -516,24 +480,21 @@ function renderFromList() {
     const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
     targetBody.innerHTML = ''; 
 
-    // Create a mutable copy of the loaded list for sorting
     let listToRender = [...loadedGamesList];
 
-    // Apply custom sort if a column is active
     if (currentSortCol) {
         listToRender.sort((a, b) => {
             let valA = a.data[currentSortCol];
             let valB = b.data[currentSortCol];
             
             if (currentSortCol === 'title') {
-                return currentSortDir === 'asc' 
-                    ? valA.localeCompare(valB) 
-                    : valB.localeCompare(valA);
+                valA = (valA || "").toString().toLowerCase();
+                valB = (valB || "").toString().toLowerCase();
+                return currentSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
             } else {
-                // Numeric sorting (Rating, Year)
-                return currentSortDir === 'desc' 
-                    ? (valB || 0) - (valA || 0) 
-                    : (valA || 0) - (valB || 0);
+                valA = Number(valA) || 0;
+                valB = Number(valB) || 0;
+                return currentSortDir === 'desc' ? valB - valA : valA - valB;
             }
         });
     }
@@ -546,10 +507,8 @@ function renderFromList() {
             return `<span class="tag shadow border border-white/20" style="background-color: ${colorConfig.bg}; color: ${colorConfig.text}">${p}</span>`;
         }).join('');
         
-        // If sorting is active, fade out drag icon and show distinct title
         const adminButtons = `
-            <div class="flex items-center justify-center gap-2 sm:gap-3">
-                <i class="fa-solid fa-grip-vertical drag-handle transition text-base sm:text-lg p-1.5 ${currentSortCol ? 'text-gray-700 cursor-not-allowed opacity-50' : 'text-gray-500 hover:text-white cursor-grab active:cursor-grabbing'}" title="${currentSortCol ? 'Clear sorting to manually reorder' : 'Drag to reorder'}"></i>
+            <div class="flex items-start justify-center gap-2 sm:gap-3">
                 <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-sm sm:text-base p-1.5" title="Edit"><i class="fa-solid fa-pen"></i></button>
                 <button class="delete-btn text-red-500 hover:text-red-400 transition text-sm sm:text-base p-1.5" title="Delete"><i class="fa-solid fa-trash"></i></button>
             </div>
@@ -565,52 +524,52 @@ function renderFromList() {
                 : '<i class="fa-solid fa-thumbs-down text-red-400 text-lg sm:text-2xl" title="Don\'t Recommend"></i>';
 
             tr.innerHTML = `
-                <td class="p-2 sm:p-3 align-middle text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center">
-                    <h3 class="text-sm sm:text-base font-bold text-white mb-1.5 leading-snug">${data.title}</h3>
+                <td class="p-3 sm:p-4 align-top text-center">
+                    <h3 class="text-sm sm:text-base font-bold text-white mb-2 leading-snug">${data.title}</h3>
                     <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center">
-                    <span class="inline-flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm bg-gray-800 px-2 py-1 rounded border border-gray-700 whitespace-nowrap shrink-0">
-                        <i class="fa-regular fa-clock text-gray-500 mr-1"></i>${Number(data.hours).toFixed(1)}h
+                <td class="p-3 sm:p-4 align-top text-center">
+                    <span class="inline-flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm bg-gray-800 px-2 py-1.5 rounded border border-gray-700 whitespace-nowrap shrink-0">
+                        <i class="fa-regular fa-clock text-gray-500 mr-1.5"></i>${Number(data.hours).toFixed(1)}h
                     </span>
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <div class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-sm">
                         ${Number(data.rating).toFixed(1)}
                     </div>
                 </td>
-                <td class="p-2 sm:p-3 align-middle">
-                    <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-3 sm:line-clamp-none">"${formatReview(data.review)}"</p>
+                <td class="p-3 sm:p-4 align-top">
+                    <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-4 sm:line-clamp-none">"${formatReview(data.review)}"</p>
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
+                <td class="p-3 sm:p-4 align-top text-center whitespace-nowrap">
                     <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center">
+                <td class="p-3 sm:p-4 align-top text-center pt-5">
                     ${verdictIcon}
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center admin-only admin-table-cell hidden">
+                <td class="p-3 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
                     ${adminButtons}
                 </td>
             `;
         } else {
             tr.innerHTML = `
-                <td class="p-2 sm:p-3 align-middle text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center">
-                    <h3 class="text-sm sm:text-base font-bold text-white mb-1.5 leading-snug">${data.title}</h3>
+                <td class="p-3 sm:p-4 align-top text-center">
+                    <h3 class="text-sm sm:text-base font-bold text-white mb-2 leading-snug">${data.title}</h3>
                     <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
                 </td>
-                <td class="p-2 sm:p-3 align-middle">
-                    <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-3 sm:line-clamp-none">"${formatReview(data.review)}"</p>
+                <td class="p-3 sm:p-4 align-top">
+                    <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-4 sm:line-clamp-none">"${formatReview(data.review)}"</p>
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center whitespace-nowrap">
+                <td class="p-3 sm:p-4 align-top text-center whitespace-nowrap">
                     <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
                 </td>
-                <td class="p-2 sm:p-3 align-middle text-center admin-only admin-table-cell hidden">
+                <td class="p-3 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
                     ${adminButtons}
                 </td>
             `;
@@ -628,19 +587,6 @@ function renderFromList() {
 
         targetBody.appendChild(tr);
     });
-
-    if (isAdmin && !isDragging) {
-        if (currentSortCol) {
-            // Disable SortableJS if user is looking at a manually sorted column 
-            // so they don't corrupt the actual Custom Date ordering.
-            if (sortableInstance) {
-                sortableInstance.destroy();
-                sortableInstance = null;
-            }
-        } else {
-            initSortable();
-        }
-    }
 }
 
 // ==========================================
@@ -670,59 +616,11 @@ function openEditModal(id, data) {
     gameModal.classList.remove('hidden');
 }
 
-// Drag and Drop Initialization
-function initSortable() {
-    if (sortableInstance) {
-        sortableInstance.destroy();
-        sortableInstance = null;
-    }
-
-    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
-    const collectionName = currentTab === 'played' ? "games" : "worked_games";
-
-    sortableInstance = Sortable.create(targetBody, {
-        handle: '.drag-handle', 
-        animation: 200, 
-        forceFallback: true, 
-        fallbackClass: 'sortable-drag', 
-        ghostClass: 'sortable-ghost',
-        
-        onStart: function () {
-            isDragging = true; 
-        },
-        onEnd: async function (evt) {
-            isDragging = false; 
-
-            if (evt.oldIndex === evt.newIndex) return;
-
-            const rows = Array.from(targetBody.querySelectorAll('tr[data-id]'));
-            const newOrderIds = rows.map(row => row.dataset.id);
-
-            const baseTime = Date.now();
-            const batch = writeBatch(db);
-
-            newOrderIds.forEach((id, index) => {
-                const docRef = doc(db, collectionName, id);
-                const newTimestamp = new Date(baseTime - (index * 60000));
-                batch.update(docRef, { createdAt: newTimestamp });
-            });
-
-            try {
-                await batch.commit();
-            } catch (error) {
-                alert("Error saving order: " + error.message);
-                loadGames(); 
-            }
-        }
-    });
-}
-
 async function deleteGameNode(id, title) {
     if (confirm(`Are you sure you want to delete "${title}"?`)) {
         try {
             const collectionName = currentTab === 'played' ? "games" : "worked_games";
             await deleteDoc(doc(db, collectionName, id));
-            if (isMobileOrDataSaver()) loadGames();
         } catch (error) {
             alert("Error deleting: " + error.message);
         }
