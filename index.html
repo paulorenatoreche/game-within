@@ -8,8 +8,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- SortableJS for Drag and Drop -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     
     <style>
         body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
@@ -33,18 +31,6 @@
         .admin-only { display: none !important; }
         body.is-admin .admin-only { display: flex !important; }
         body.is-admin .admin-table-cell { display: table-cell !important; }
-        
-        /* Drag and Drop Styling */
-        .sortable-ghost { 
-            opacity: 0.2 !important; 
-            background-color: #3b82f6 !important; 
-        }
-        .sortable-drag { 
-            background-color: #1e293b !important; 
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.8) !important;
-            cursor: grabbing !important;
-            opacity: 1 !important;
-        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -73,14 +59,16 @@
     <!-- Main Content -->
     <main class="flex-grow max-w-[90rem] w-full mx-auto px-2 sm:px-4 py-4 sm:py-8">
         
-        <!-- Tabs Navigation -->
-        <div class="flex gap-4 sm:gap-8 mb-4 sm:mb-6 border-b border-gray-700/50 pb-2 px-2">
-            <button id="tabPlayedBtn" class="text-blue-400 font-bold border-b-2 border-blue-400 px-2 py-2 transition text-sm sm:text-base cursor-pointer">
-                What I've Been Playing
-            </button>
-            <button id="tabWorkedBtn" class="text-gray-500 hover:text-gray-300 font-semibold border-b-2 border-transparent px-2 py-2 transition text-sm sm:text-base cursor-pointer">
-                Industry Experience
-            </button>
+        <!-- UI TABS: Clear Segmentation -->
+        <div class="flex justify-center mb-6 sm:mb-8 mt-2">
+            <div class="inline-flex bg-gray-800/80 p-1.5 rounded-xl border border-gray-700/50 shadow-lg w-full sm:w-auto">
+                <button id="tabPlayedBtn" class="flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-bold bg-blue-600 text-white shadow-md transition-all">
+                    <i class="fa-solid fa-gamepad"></i> What I've Been Playing
+                </button>
+                <button id="tabWorkedBtn" class="flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-medium text-gray-400 hover:text-gray-200 transition-all">
+                    <i class="fa-solid fa-briefcase"></i> Industry Experience
+                </button>
+            </div>
         </div>
 
         <!-- Floating Add Game Button (Admin Only) -->
@@ -159,7 +147,7 @@
                 
                 <div class="bg-blue-900/20 border border-blue-800/50 p-3 rounded">
                     <label class="block text-xs sm:text-sm mb-1 text-blue-300 font-semibold">Cover Image</label>
-                    <p class="text-[11px] text-gray-400 mb-2">Use <strong>portrait format</strong>.</p>
+                    <p class="text-[11px] text-gray-400 mb-2">Use <strong>portrait format</strong>. (Leave empty if editing and keeping the same image).</p>
                     <input type="file" id="gameCover" accept="image/*" class="w-full text-xs sm:text-sm text-gray-300">
                 </div>
 
@@ -192,7 +180,7 @@
                     <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="verdict" value="down"> <i class="fa-solid fa-thumbs-down text-red-400"></i> Don't Rec.</label>
                 </div>
 
-                <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded mt-1 transition text-sm sm:text-base">Save Game</button>
+                <button type="submit" id="submitBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded mt-1 transition text-sm sm:text-base">Save Entry</button>
             </form>
         </div>
     </div>
