@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>gameWithin</title>
+    <title>gameWithin 2.0</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome for icons -->
@@ -73,13 +73,23 @@
     <!-- Main Content -->
     <main class="flex-grow max-w-[90rem] w-full mx-auto px-2 sm:px-4 py-4 sm:py-8">
         
+        <!-- Tabs Navigation -->
+        <div class="flex gap-4 sm:gap-8 mb-4 sm:mb-6 border-b border-gray-700/50 pb-2 px-2">
+            <button id="tabPlayedBtn" class="text-blue-400 font-bold border-b-2 border-blue-400 px-2 py-2 transition text-sm sm:text-base cursor-pointer">
+                Games I've Played
+            </button>
+            <button id="tabWorkedBtn" class="text-gray-500 hover:text-gray-300 font-semibold border-b-2 border-transparent px-2 py-2 transition text-sm sm:text-base cursor-pointer">
+                Professional Work
+            </button>
+        </div>
+
         <!-- Floating Add Game Button (Admin Only) -->
         <button id="addGameBtn" class="admin-only fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-500 text-white rounded-full w-12 h-12 sm:w-14 sm:h-14 items-center justify-center shadow-lg shadow-blue-500/50 transition transform hover:scale-110 z-50">
             <i class="fa-solid fa-plus text-xl sm:text-2xl"></i>
         </button>
 
-        <!-- Games Table -->
-        <div class="glass rounded-xl overflow-hidden border border-gray-700 shadow-xl">
+        <!-- TABLE 1: Games Played -->
+        <div id="tablePlayedContainer" class="glass rounded-xl overflow-hidden border border-gray-700 shadow-xl block">
             <div class="overflow-x-auto table-scroll w-full">
                 <table class="w-full text-left border-collapse min-w-[780px] sm:min-w-[950px]">
                     <thead class="bg-gray-800/80 border-b border-gray-700 text-xs sm:text-sm">
@@ -101,9 +111,29 @@
             </div>
         </div>
 
+        <!-- TABLE 2: Games Worked On -->
+        <div id="tableWorkedContainer" class="glass rounded-xl overflow-hidden border border-gray-700 shadow-xl hidden">
+            <div class="overflow-x-auto table-scroll w-full">
+                <table class="w-full text-left border-collapse min-w-[700px] sm:min-w-[850px]">
+                    <thead class="bg-gray-800/80 border-b border-gray-700 text-xs sm:text-sm">
+                        <tr>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-20 sm:w-28 text-center">Cover</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-1/4 text-center">Title & Platforms</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-1/2">Service Provided</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center w-24">Year</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center admin-only admin-table-cell hidden w-28">Admin</th>
+                        </tr>
+                    </thead>
+                    <tbody id="workedTableBody" class="divide-y divide-gray-800/50 text-xs sm:text-sm">
+                        <!-- Table rows injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </main>
 
-    <!-- Add/Edit Game Modal -->
+    <!-- Add/Edit Game Modal (Dynamically Configured via JS based on Tab) -->
     <div id="gameModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-3 sm:p-4">
         <div class="glass w-full max-w-lg rounded-xl p-5 sm:p-6 relative max-h-[92vh] overflow-y-auto table-scroll">
             <button id="closeModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
@@ -123,14 +153,14 @@
 
                 <input type="text" id="gamePlatforms" placeholder="Platforms (comma separated. Ex: Steam, iOS)" required class="bg-gray-800 border border-gray-700 rounded p-2.5 text-base focus:outline-none focus:border-blue-500">
                 
-                <div class="grid grid-cols-3 gap-2">
-                    <div>
+                <div id="statsGrid" class="grid grid-cols-3 gap-2">
+                    <div id="hoursContainer">
                         <label class="block text-xs mb-1 text-gray-400">Hours</label>
-                        <input type="number" id="gameHours" step="0.1" min="0" placeholder="Ex: 45.5" required class="bg-gray-800 border border-gray-700 rounded p-2 text-base w-full focus:outline-none">
+                        <input type="number" id="gameHours" step="0.1" min="0" placeholder="Ex: 45.5" class="bg-gray-800 border border-gray-700 rounded p-2 text-base w-full focus:outline-none">
                     </div>
-                    <div>
+                    <div id="ratingContainer">
                         <label class="block text-xs mb-1 text-gray-400">Rating (0-5)</label>
-                        <input type="number" id="gameRating" step="0.1" min="0" max="5" placeholder="Ex: 4.8" required class="bg-gray-800 border border-gray-700 rounded p-2 text-base w-full focus:outline-none">
+                        <input type="number" id="gameRating" step="0.1" min="0" max="5" placeholder="Ex: 4.8" class="bg-gray-800 border border-gray-700 rounded p-2 text-base w-full focus:outline-none">
                     </div>
                     <div>
                         <label class="block text-xs mb-1 text-gray-400">Year</label>
@@ -139,12 +169,12 @@
                 </div>
 
                 <div>
-                    <label class="block text-xs mb-1 text-gray-400">Review (Max 300 chars)</label>
+                    <label id="reviewLabel" class="block text-xs mb-1 text-gray-400">Review (Max 300 chars)</label>
                     <textarea id="gameReview" maxlength="300" rows="3" required class="bg-gray-800 border border-gray-700 rounded p-2 text-base w-full focus:outline-none focus:border-blue-500"></textarea>
                     <div id="charCount" class="text-[11px] text-gray-500 text-right mt-0.5 font-mono">0 / 300 characters</div>
                 </div>
 
-                <div class="flex gap-4 items-center bg-gray-800/50 p-2.5 rounded text-xs sm:text-sm">
+                <div id="verdictContainer" class="flex gap-4 items-center bg-gray-800/50 p-2.5 rounded text-xs sm:text-sm">
                     <label class="text-gray-400">Verdict:</label>
                     <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="verdict" value="up" checked> <i class="fa-solid fa-thumbs-up text-green-400"></i> Recommend</label>
                     <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="verdict" value="down"> <i class="fa-solid fa-thumbs-down text-red-400"></i> Don't Rec.</label>
