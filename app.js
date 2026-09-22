@@ -70,7 +70,11 @@ let loadedGamesList = [];
 let sortableInstance = null; 
 let unsubscribeSnapshot = null;
 let isDragging = false; 
-let currentTab = 'played'; // Tracks which tab is active ('played' or 'worked')
+let currentTab = 'played'; 
+
+// Sorting State Variables
+let currentSortCol = null; // 'title', 'rating', 'year'
+let currentSortDir = 'desc'; // 'asc', 'desc'
 
 // Global Custom Colors Object
 let customTagColors = {}; 
@@ -140,46 +144,44 @@ async function fetchTagColors() {
 // ==========================================
 function switchTab(tab) {
     currentTab = tab;
+    currentSortCol = null; // Reset sort state when changing tabs
+    currentSortDir = 'desc';
+
     if (tab === 'played') {
-        // Style Active Tab
         tabPlayedBtn.classList.replace('text-gray-500', 'text-blue-400');
         tabPlayedBtn.classList.replace('hover:text-gray-300', 'border-blue-400');
         tabPlayedBtn.classList.replace('font-semibold', 'font-bold');
         
-        // Style Inactive Tab
         tabWorkedBtn.classList.replace('text-blue-400', 'text-gray-500');
         tabWorkedBtn.classList.replace('border-blue-400', 'hover:text-gray-300');
         tabWorkedBtn.classList.replace('font-bold', 'font-semibold');
 
-        // Toggle Tables
         tablePlayedContainer.classList.remove('hidden');
         tablePlayedContainer.classList.add('block');
         tableWorkedContainer.classList.remove('block');
         tableWorkedContainer.classList.add('hidden');
     } else {
-        // Style Active Tab
         tabWorkedBtn.classList.replace('text-gray-500', 'text-blue-400');
         tabWorkedBtn.classList.replace('hover:text-gray-300', 'border-blue-400');
         tabWorkedBtn.classList.replace('font-semibold', 'font-bold');
 
-        // Style Inactive Tab
         tabPlayedBtn.classList.replace('text-blue-400', 'text-gray-500');
         tabPlayedBtn.classList.replace('border-blue-400', 'hover:text-gray-300');
         tabPlayedBtn.classList.replace('font-bold', 'font-semibold');
 
-        // Toggle Tables
         tableWorkedContainer.classList.remove('hidden');
         tableWorkedContainer.classList.add('block');
         tablePlayedContainer.classList.remove('block');
         tablePlayedContainer.classList.add('hidden');
     }
-    loadGames(); // Refresh the table with the proper collection
+    
+    updateSortIcons();
+    loadGames(); 
 }
 
 tabPlayedBtn.addEventListener('click', () => switchTab('played'));
 tabWorkedBtn.addEventListener('click', () => switchTab('worked'));
 
-// Adjust the Modal UI depending on the active tab
 function prepareModalForTab(tab) {
     if (tab === 'played') {
         hoursContainer.classList.remove('hidden');
@@ -197,6 +199,50 @@ function prepareModalForTab(tab) {
         reviewLabel.innerText = "Service Provided (Max 300 chars)";
         gameHours.required = false;
         gameRating.required = false;
+    }
+}
+
+// ==========================================
+// SORTING LOGIC
+// ==========================================
+function setupSortingListeners() {
+    document.querySelectorAll('.sortable-col').forEach(th => {
+        th.addEventListener('click', () => {
+            const col = th.getAttribute('data-sort');
+            if (currentSortCol === col) {
+                // Toggle direction
+                currentSortDir = currentSortDir === 'desc' ? 'asc' : 'desc';
+            } else {
+                // Set new column sort
+                currentSortCol = col;
+                // Default: text alphabetically asc, numbers desc
+                currentSortDir = col === 'title' ? 'asc' : 'desc';
+            }
+            updateSortIcons();
+            renderFromList(); // Re-render the loaded list immediately
+        });
+    });
+}
+
+function updateSortIcons() {
+    // Reset all icons to default state
+    document.querySelectorAll('.sort-icon').forEach(icon => {
+        icon.className = 'fa-solid fa-sort ml-1 text-gray-600'; 
+    });
+    
+    if (!currentSortCol) return;
+
+    // Apply active state to current column in the visible table
+    const activeContainer = currentTab === 'played' ? tablePlayedContainer : tableWorkedContainer;
+    const th = activeContainer.querySelector(`th[data-sort="${currentSortCol}"]`);
+    
+    if (th) {
+        const icon = th.querySelector('.sort-icon');
+        if (currentSortDir === 'asc') {
+            icon.className = 'fa-solid fa-sort-up ml-1 text-blue-400';
+        } else {
+            icon.className = 'fa-solid fa-sort-down ml-1 text-blue-400';
+        }
     }
 }
 
@@ -228,7 +274,7 @@ onAuthStateChanged(auth, (user) => {
         isAdmin = true;
         document.body.classList.add('is-admin');
         loginBtn.style.display = 'none';
-        if (!isMobileOrDataSaver()) initSortable(); 
+        if (!isMobileOrDataSaver() && !currentSortCol) initSortable(); 
     } else {
         if (user) signOut(auth);
         isAdmin = false;
@@ -250,7 +296,7 @@ addGameBtn.addEventListener('click', () => {
     document.getElementById('gameId').value = '';
     document.getElementById('gameOldCover').value = '';
     document.getElementById('gameCover').required = true;
-    document.getElementById('modalTitle').innerText = currentTab === 'played' ? "Add New Game" : "Add Professional Work";
+    document.getElementById('modalTitle').innerText = currentTab === 'played' ? "Add New Game" : "Add Industry Experience";
     document.getElementById('submitBtn').innerText = "Save Entry";
     
     charCount.innerText = "0 / 300 characters";
@@ -284,7 +330,6 @@ manageTagsBtn.addEventListener('click', async () => {
     const uniqueTags = new Set();
     
     try {
-        // Fetch from BOTH collections to ensure all tags are visible to edit
         const [playedSnap, workedSnap] = await Promise.all([
             getDocs(collection(db, "games")),
             getDocs(collection(db, "worked_games"))
@@ -349,7 +394,7 @@ saveTagsBtn.addEventListener('click', async () => {
         await setDoc(doc(db, "settings", "tagColors"), newColorSettings);
         customTagColors = newColorSettings; 
         tagSettingsModal.classList.add('hidden');
-        loadGames(); // Trigger re-render to apply new colors instantly
+        loadGames(); 
     } catch (error) {
         alert("Error saving colors: " + error.message + "\n\nMake sure you updated your Firebase Rules to allow writing to /settings/");
     } finally {
@@ -380,7 +425,6 @@ addGameForm.addEventListener('submit', async (e) => {
             imageUrl = await getDownloadURL(storageRef);
         }
 
-        // Base Data (Common for both tabs)
         const gameData = {
             title: document.getElementById('gameTitle').value,
             coverUrl: imageUrl,
@@ -389,7 +433,6 @@ addGameForm.addEventListener('submit', async (e) => {
             review: document.getElementById('gameReview').value,
         };
 
-        // Specific Data
         if (currentTab === 'played') {
             gameData.hours = parseFloat(document.getElementById('gameHours').value);
             gameData.rating = parseFloat(document.getElementById('gameRating').value);
@@ -430,7 +473,7 @@ async function loadGames() {
         try {
             renderLoadingRow();
             const querySnapshot = await getDocs(q);
-            renderGamesHTML(querySnapshot);
+            processSnapshot(querySnapshot);
         } catch (error) {
             console.error("Error:", error);
             renderErrorRow();
@@ -438,7 +481,7 @@ async function loadGames() {
     } else {
         if (unsubscribeSnapshot) unsubscribeSnapshot();
         unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
-            if (!isDragging) renderGamesHTML(querySnapshot);
+            if (!isDragging) processSnapshot(querySnapshot);
         }, (error) => console.error("Live Sync Error:", error));
     }
 }
@@ -453,28 +496,60 @@ function renderErrorRow() {
     targetBody.innerHTML = `<tr><td colspan="${currentTab === 'played' ? 8 : 5}" class="p-6 text-center text-red-400">Error loading.</td></tr>`;
 }
 
-function renderGamesHTML(querySnapshot) {
+function processSnapshot(querySnapshot) {
     loadedGamesList = []; 
-    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
-    targetBody.innerHTML = ''; 
-
+    
     if(querySnapshot.empty) {
+        const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
         targetBody.innerHTML = `<tr><td colspan="${currentTab === 'played' ? 8 : 5}" class="p-6 text-center text-gray-400">No games added yet.</td></tr>`;
         return;
     }
 
     querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        loadedGamesList.push({ id: docSnap.id, data: data });
+        loadedGamesList.push({ id: docSnap.id, data: docSnap.data() });
+    });
+
+    renderFromList();
+}
+
+function renderFromList() {
+    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
+    targetBody.innerHTML = ''; 
+
+    // Create a mutable copy of the loaded list for sorting
+    let listToRender = [...loadedGamesList];
+
+    // Apply custom sort if a column is active
+    if (currentSortCol) {
+        listToRender.sort((a, b) => {
+            let valA = a.data[currentSortCol];
+            let valB = b.data[currentSortCol];
+            
+            if (currentSortCol === 'title') {
+                return currentSortDir === 'asc' 
+                    ? valA.localeCompare(valB) 
+                    : valB.localeCompare(valA);
+            } else {
+                // Numeric sorting (Rating, Year)
+                return currentSortDir === 'desc' 
+                    ? (valB || 0) - (valA || 0) 
+                    : (valA || 0) - (valB || 0);
+            }
+        });
+    }
+
+    listToRender.forEach((item) => {
+        const { id, data } = item;
         
         const tagsHTML = data.platforms.map(p => {
             const colorConfig = getPlatformColorConfig(p);
             return `<span class="tag shadow border border-white/20" style="background-color: ${colorConfig.bg}; color: ${colorConfig.text}">${p}</span>`;
         }).join('');
         
+        // If sorting is active, fade out drag icon and show distinct title
         const adminButtons = `
             <div class="flex items-center justify-center gap-2 sm:gap-3">
-                <i class="fa-solid fa-grip-vertical drag-handle text-gray-500 hover:text-white cursor-grab active:cursor-grabbing text-base sm:text-lg transition p-1.5" title="Drag to reorder"></i>
+                <i class="fa-solid fa-grip-vertical drag-handle transition text-base sm:text-lg p-1.5 ${currentSortCol ? 'text-gray-700 cursor-not-allowed opacity-50' : 'text-gray-500 hover:text-white cursor-grab active:cursor-grabbing'}" title="${currentSortCol ? 'Clear sorting to manually reorder' : 'Drag to reorder'}"></i>
                 <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-sm sm:text-base p-1.5" title="Edit"><i class="fa-solid fa-pen"></i></button>
                 <button class="delete-btn text-red-500 hover:text-red-400 transition text-sm sm:text-base p-1.5" title="Delete"><i class="fa-solid fa-trash"></i></button>
             </div>
@@ -482,7 +557,7 @@ function renderGamesHTML(querySnapshot) {
 
         const tr = document.createElement('tr');
         tr.className = "hover:bg-gray-800/40 transition duration-200 group";
-        tr.setAttribute('data-id', docSnap.id);
+        tr.setAttribute('data-id', id);
         
         if (currentTab === 'played') {
             const verdictIcon = data.verdict === 'up' 
@@ -521,7 +596,6 @@ function renderGamesHTML(querySnapshot) {
                 </td>
             `;
         } else {
-            // Worked Tab HTML Layout
             tr.innerHTML = `
                 <td class="p-2 sm:p-3 align-middle text-center">
                     <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
@@ -548,15 +622,24 @@ function renderGamesHTML(querySnapshot) {
         });
 
         if (isAdmin) {
-            tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(docSnap.id, data));
-            tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(docSnap.id, data.title));
+            tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(id, data));
+            tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(id, data.title));
         }
 
         targetBody.appendChild(tr);
     });
 
     if (isAdmin && !isDragging) {
-        initSortable();
+        if (currentSortCol) {
+            // Disable SortableJS if user is looking at a manually sorted column 
+            // so they don't corrupt the actual Custom Date ordering.
+            if (sortableInstance) {
+                sortableInstance.destroy();
+                sortableInstance = null;
+            }
+        } else {
+            initSortable();
+        }
     }
 }
 
@@ -582,7 +665,7 @@ function openEditModal(id, data) {
     document.getElementById('gameCover').required = false; 
     charCount.innerText = `${data.review.length} / 300 characters`;
 
-    document.getElementById('modalTitle').innerText = currentTab === 'played' ? "Edit Game" : "Edit Professional Work";
+    document.getElementById('modalTitle').innerText = currentTab === 'played' ? "Edit Game" : "Edit Industry Experience";
     document.getElementById('submitBtn').innerText = "Update Entry";
     gameModal.classList.remove('hidden');
 }
@@ -647,4 +730,5 @@ async function deleteGameNode(id, title) {
 }
 
 // Initialize application
+setupSortingListeners();
 loadGames();
