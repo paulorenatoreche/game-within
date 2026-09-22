@@ -1,7 +1,7 @@
 // Firebase SDK Imports (Modular)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // YOUR FIREBASE CONFIGURATION
@@ -70,9 +70,11 @@ let loadedGamesList = [];
 let unsubscribeSnapshot = null;
 let currentTab = 'played'; 
 
-// Sorting State Variables
+// Sorting & Drag State Variables
 let currentSortCol = null; 
 let currentSortDir = 'desc'; 
+let isDragging = false;
+let sortableInstance = null;
 
 // Global Custom Colors Object
 let customTagColors = {}; 
@@ -217,25 +219,23 @@ function setupSortingListeners() {
 }
 
 function updateSortIcons() {
-    // BUG FIX: Adicionando a classe "sort-icon" de volta na sobrescrita para evitar que ela suma e gere erro null!
-    document.querySelectorAll('.sort-icon').forEach(icon => {
+    // 100% à prova de falhas: varremos todos os ícones de ordenação existentes e resetamos o visual
+    document.querySelectorAll('.sortable-col i.sort-icon').forEach(icon => {
         icon.className = 'fa-solid fa-sort ml-1 text-gray-600 sort-icon'; 
     });
     
     if (!currentSortCol) return;
 
+    // Encontra a tabela ativa e aplica o visual correto sem estourar Null Pointer
     const activeContainer = currentTab === 'played' ? tablePlayedContainer : tableWorkedContainer;
     const th = activeContainer.querySelector(`th[data-sort="${currentSortCol}"]`);
     
     if (th) {
-        const icon = th.querySelector('.sort-icon');
-        // Trava de segurança extra
+        const icon = th.querySelector('i.sort-icon');
         if (icon) {
-            if (currentSortDir === 'asc') {
-                icon.className = 'fa-solid fa-sort-up ml-1 text-blue-400 sort-icon';
-            } else {
-                icon.className = 'fa-solid fa-sort-down ml-1 text-blue-400 sort-icon';
-            }
+            icon.className = currentSortDir === 'asc' 
+                ? 'fa-solid fa-sort-up ml-1 text-blue-400 sort-icon'
+                : 'fa-solid fa-sort-down ml-1 text-blue-400 sort-icon';
         }
     }
 }
@@ -448,7 +448,7 @@ addGameForm.addEventListener('submit', async (e) => {
 });
 
 // ==========================================
-// 4. LOAD & RENDER GAMES
+// 4. LOAD & RENDER GAMES & DRAG/DROP
 // ==========================================
 async function loadGames() {
     if (!tagColorsFetched) await fetchTagColors();
@@ -459,7 +459,10 @@ async function loadGames() {
     if (unsubscribeSnapshot) unsubscribeSnapshot();
     
     unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
-        processSnapshot(querySnapshot);
+        // Ignora a atualização ao vivo caso o administrador esteja ativamente arrastando uma linha
+        if (!isDragging) {
+            processSnapshot(querySnapshot);
+        }
     }, (error) => console.error("Live Sync Error:", error));
 }
 
@@ -485,6 +488,7 @@ function renderFromList() {
 
     let listToRender = [...loadedGamesList];
 
+    // Lógica Matemática e Alfabética de Ordenação
     if (currentSortCol) {
         listToRender.sort((a, b) => {
             let valA = a.data[currentSortCol];
@@ -510,8 +514,12 @@ function renderFromList() {
             return `<span class="tag shadow border border-white/20" style="background-color: ${colorConfig.bg}; color: ${colorConfig.text}">${p}</span>`;
         }).join('');
         
+        // Se a tabela estiver sob um filtro de ordenação, desabilitamos o botão visual de drag
+        const isSortActive = currentSortCol !== null;
+        
         const adminButtons = `
             <div class="flex items-start justify-center gap-2 sm:gap-3">
+                <i class="fa-solid fa-grip-vertical drag-handle transition text-base sm:text-lg p-1.5 ${isSortActive ? 'text-gray-700 cursor-not-allowed opacity-50' : 'text-gray-500 hover:text-white cursor-grab active:cursor-grabbing'}" title="${isSortActive ? 'Clear sorting to manually reorder' : 'Drag to reorder'}"></i>
                 <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-sm sm:text-base p-1.5" title="Edit"><i class="fa-solid fa-pen"></i></button>
                 <button class="delete-btn text-red-500 hover:text-red-400 transition text-sm sm:text-base p-1.5" title="Delete"><i class="fa-solid fa-trash"></i></button>
             </div>
@@ -527,52 +535,52 @@ function renderFromList() {
                 : '<i class="fa-solid fa-thumbs-down text-red-400 text-lg sm:text-2xl" title="Don\'t Recommend"></i>';
 
             tr.innerHTML = `
-                <td class="p-3 sm:p-4 align-top text-center">
+                <td class="p-2.5 sm:p-4 align-top text-center">
                     <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center">
+                <td class="p-2.5 sm:p-4 align-top text-center">
                     <h3 class="text-sm sm:text-base font-bold text-white mb-2 leading-snug">${data.title}</h3>
                     <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center">
+                <td class="p-2.5 sm:p-4 align-top text-center">
                     <span class="inline-flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm bg-gray-800 px-2 py-1.5 rounded border border-gray-700 whitespace-nowrap shrink-0">
                         <i class="fa-regular fa-clock text-gray-500 mr-1.5"></i>${Number(data.hours).toFixed(1)}h
                     </span>
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center">
+                <td class="p-2.5 sm:p-4 align-top text-center">
                     <div class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-sm">
                         ${Number(data.rating).toFixed(1)}
                     </div>
                 </td>
-                <td class="p-3 sm:p-4 align-top">
+                <td class="p-2.5 sm:p-4 align-top">
                     <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-4 sm:line-clamp-none">"${formatReview(data.review)}"</p>
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center whitespace-nowrap">
+                <td class="p-2.5 sm:p-4 align-top text-center whitespace-nowrap">
                     <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center pt-5">
+                <td class="p-2.5 sm:p-4 align-top text-center pt-5">
                     ${verdictIcon}
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
+                <td class="p-2.5 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
                     ${adminButtons}
                 </td>
             `;
         } else {
             tr.innerHTML = `
-                <td class="p-3 sm:p-4 align-top text-center">
+                <td class="p-2.5 sm:p-4 align-top text-center">
                     <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center">
+                <td class="p-2.5 sm:p-4 align-top text-center">
                     <h3 class="text-sm sm:text-base font-bold text-white mb-2 leading-snug">${data.title}</h3>
                     <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
                 </td>
-                <td class="p-3 sm:p-4 align-top">
+                <td class="p-2.5 sm:p-4 align-top">
                     <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-4 sm:line-clamp-none">"${formatReview(data.review)}"</p>
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center whitespace-nowrap">
+                <td class="p-2.5 sm:p-4 align-top text-center whitespace-nowrap">
                     <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
                 </td>
-                <td class="p-3 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
+                <td class="p-2.5 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
                     ${adminButtons}
                 </td>
             `;
@@ -589,6 +597,65 @@ function renderFromList() {
         }
 
         targetBody.appendChild(tr);
+    });
+
+    // Controla a inicialização do Drag & Drop
+    if (isAdmin) {
+        if (!currentSortCol) {
+            initSortable();
+        } else if (sortableInstance) {
+            sortableInstance.destroy();
+            sortableInstance = null;
+        }
+    }
+}
+
+// Inicializa a engine do Drag and Drop silenciosa
+function initSortable() {
+    if (sortableInstance) {
+        sortableInstance.destroy();
+        sortableInstance = null;
+    }
+
+    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
+    const collectionName = currentTab === 'played' ? "games" : "worked_games";
+
+    sortableInstance = Sortable.create(targetBody, {
+        handle: '.drag-handle', 
+        animation: 150, 
+        forceFallback: true, // Garante que a linha acompanhe o mouse até o topo exato da tabela
+        fallbackClass: 'sortable-drag', 
+        ghostClass: 'sortable-ghost',
+        
+        onStart: function () {
+            isDragging = true; 
+        },
+        onEnd: async function (evt) {
+            isDragging = false; 
+
+            if (evt.oldIndex === evt.newIndex) return;
+
+            const rows = Array.from(targetBody.querySelectorAll('tr[data-id]'));
+            const newOrderIds = rows.map(row => row.dataset.id);
+
+            const baseTime = Date.now();
+            const batch = writeBatch(db);
+
+            // Grava a nova ordem forçando datas decrescentes perfeitamente limpas
+            newOrderIds.forEach((id, index) => {
+                const docRef = doc(db, collectionName, id);
+                const newTimestamp = new Date(baseTime - (index * 60000));
+                batch.update(docRef, { createdAt: newTimestamp });
+            });
+
+            try {
+                // Ao dar commit, a tabela será sutilmente engatilhada pelo onSnapshot sem piscar a tela
+                await batch.commit();
+            } catch (error) {
+                alert("Error saving order: " + error.message);
+                loadGames(); 
+            }
+        }
     });
 }
 
