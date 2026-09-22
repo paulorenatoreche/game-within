@@ -1,7 +1,7 @@
 // Firebase SDK Imports (Modular)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, writeBatch, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // YOUR FIREBASE CONFIGURATION
@@ -203,7 +203,6 @@ function setupSortingListeners() {
         th.addEventListener('click', () => {
             const col = th.getAttribute('data-sort');
             
-            // Toggle direction if clicking the same column, else start fresh
             if (currentSortCol === col) {
                 currentSortDir = currentSortDir === 'desc' ? 'asc' : 'desc';
             } else {
@@ -218,8 +217,9 @@ function setupSortingListeners() {
 }
 
 function updateSortIcons() {
+    // BUG FIX: Adicionando a classe "sort-icon" de volta na sobrescrita para evitar que ela suma e gere erro null!
     document.querySelectorAll('.sort-icon').forEach(icon => {
-        icon.className = 'fa-solid fa-sort ml-1 text-gray-600'; 
+        icon.className = 'fa-solid fa-sort ml-1 text-gray-600 sort-icon'; 
     });
     
     if (!currentSortCol) return;
@@ -229,10 +229,13 @@ function updateSortIcons() {
     
     if (th) {
         const icon = th.querySelector('.sort-icon');
-        if (currentSortDir === 'asc') {
-            icon.className = 'fa-solid fa-sort-up ml-1 text-blue-400';
-        } else {
-            icon.className = 'fa-solid fa-sort-down ml-1 text-blue-400';
+        // Trava de segurança extra
+        if (icon) {
+            if (currentSortDir === 'asc') {
+                icon.className = 'fa-solid fa-sort-up ml-1 text-blue-400 sort-icon';
+            } else {
+                icon.className = 'fa-solid fa-sort-down ml-1 text-blue-400 sort-icon';
+            }
         }
     }
 }
