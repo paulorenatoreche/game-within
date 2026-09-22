@@ -1,7 +1,7 @@
 // Firebase SDK Imports (Modular)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, getDocs, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, getDoc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
 // YOUR FIREBASE CONFIGURATION
@@ -24,6 +24,31 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+
+// Application Core State (Total Database Separation to prevent cross-contamination)
+const appState = {
+    played: {
+        collectionName: "games",
+        list: [],
+        sortCol: null, 
+        sortDir: 'desc',
+        unsubscribe: null
+    },
+    worked: {
+        collectionName: "worked_games",
+        list: [],
+        sortCol: null,
+        sortDir: 'desc',
+        unsubscribe: null
+    }
+};
+
+let currentTab = 'played'; 
+let isAdmin = false;
+
+// Global Custom Colors Object
+let customTagColors = {}; 
+let tagColorsFetched = false;
 
 // Tabs & Main UI Containers
 const tabPlayedBtn = document.getElementById('tabPlayedBtn');
@@ -63,22 +88,6 @@ const saveTagsBtn = document.getElementById('saveTagsBtn');
 // Lightbox Elements
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
-
-// State Variables
-let isAdmin = false;
-let loadedGamesList = []; 
-let unsubscribeSnapshot = null;
-let currentTab = 'played'; 
-
-// Sorting & Drag State Variables
-let currentSortCol = null; 
-let currentSortDir = 'desc'; 
-let isDragging = false;
-let sortableInstance = null;
-
-// Global Custom Colors Object
-let customTagColors = {}; 
-let tagColorsFetched = false;
 
 // ==========================================
 // UTILITY HELPERS
@@ -135,34 +144,24 @@ async function fetchTagColors() {
 }
 
 // ==========================================
-// TABS LOGIC
+// TABS & SEGMENTED CONTROL LOGIC
 // ==========================================
 function switchTab(tab) {
     currentTab = tab;
-    currentSortCol = null; 
-    currentSortDir = 'desc';
 
     if (tab === 'played') {
-        tabPlayedBtn.classList.replace('text-gray-500', 'text-blue-400');
-        tabPlayedBtn.classList.replace('hover:text-gray-300', 'border-blue-400');
-        tabPlayedBtn.classList.replace('font-semibold', 'font-bold');
-        
-        tabWorkedBtn.classList.replace('text-blue-400', 'text-gray-500');
-        tabWorkedBtn.classList.replace('border-blue-400', 'hover:text-gray-300');
-        tabWorkedBtn.classList.replace('font-bold', 'font-semibold');
+        // Highlight active visually
+        tabPlayedBtn.className = "flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-bold bg-blue-600 text-white shadow-md transition-all";
+        tabWorkedBtn.className = "flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-medium text-gray-400 hover:text-gray-200 transition-all cursor-pointer";
 
         tablePlayedContainer.classList.remove('hidden');
         tablePlayedContainer.classList.add('block');
         tableWorkedContainer.classList.remove('block');
         tableWorkedContainer.classList.add('hidden');
     } else {
-        tabWorkedBtn.classList.replace('text-gray-500', 'text-blue-400');
-        tabWorkedBtn.classList.replace('hover:text-gray-300', 'border-blue-400');
-        tabWorkedBtn.classList.replace('font-semibold', 'font-bold');
-
-        tabPlayedBtn.classList.replace('text-blue-400', 'text-gray-500');
-        tabPlayedBtn.classList.replace('border-blue-400', 'hover:text-gray-300');
-        tabPlayedBtn.classList.replace('font-bold', 'font-semibold');
+        // Highlight active visually
+        tabWorkedBtn.className = "flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-bold bg-blue-600 text-white shadow-md transition-all";
+        tabPlayedBtn.className = "flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-medium text-gray-400 hover:text-gray-200 transition-all cursor-pointer";
 
         tableWorkedContainer.classList.remove('hidden');
         tableWorkedContainer.classList.add('block');
@@ -170,8 +169,8 @@ function switchTab(tab) {
         tablePlayedContainer.classList.add('hidden');
     }
     
-    updateSortIcons();
-    loadGames(); 
+    // As renderizações agora são protegidas por abas, podemos apenas chamar o render
+    renderTable(currentTab);
 }
 
 tabPlayedBtn.addEventListener('click', () => switchTab('played'));
@@ -198,43 +197,45 @@ function prepareModalForTab(tab) {
 }
 
 // ==========================================
-// SORTING LOGIC
+// SORTING LOGIC (STRICTLY INDEPENDENT)
 // ==========================================
 function setupSortingListeners() {
     document.querySelectorAll('.sortable-col').forEach(th => {
         th.addEventListener('click', () => {
+            // Identifier of the environment
+            const tab = th.closest('#tablePlayedContainer') ? 'played' : 'worked';
             const col = th.getAttribute('data-sort');
             
-            if (currentSortCol === col) {
-                currentSortDir = currentSortDir === 'desc' ? 'asc' : 'desc';
+            if (appState[tab].sortCol === col) {
+                appState[tab].sortDir = appState[tab].sortDir === 'desc' ? 'asc' : 'desc';
             } else {
-                currentSortCol = col;
-                currentSortDir = col === 'title' ? 'asc' : 'desc';
+                appState[tab].sortCol = col;
+                appState[tab].sortDir = col === 'title' ? 'asc' : 'desc';
             }
             
-            updateSortIcons();
-            renderFromList();
+            updateSortIcons(tab);
+            renderTable(tab);
         });
     });
 }
 
-function updateSortIcons() {
-    // 100% à prova de falhas: varremos todos os ícones de ordenação existentes e resetamos o visual
-    document.querySelectorAll('.sortable-col i.sort-icon').forEach(icon => {
+function updateSortIcons(tab) {
+    const container = tab === 'played' ? tablePlayedContainer : tableWorkedContainer;
+    
+    // Clear icons only in the relevant tab
+    container.querySelectorAll('.sort-icon').forEach(icon => {
         icon.className = 'fa-solid fa-sort ml-1 text-gray-600 sort-icon'; 
     });
     
-    if (!currentSortCol) return;
+    const col = appState[tab].sortCol;
+    if (!col) return;
 
-    // Encontra a tabela ativa e aplica o visual correto sem estourar Null Pointer
-    const activeContainer = currentTab === 'played' ? tablePlayedContainer : tableWorkedContainer;
-    const th = activeContainer.querySelector(`th[data-sort="${currentSortCol}"]`);
-    
+    const th = container.querySelector(`th[data-sort="${col}"]`);
     if (th) {
-        const icon = th.querySelector('i.sort-icon');
+        const icon = th.querySelector('.sort-icon');
         if (icon) {
-            icon.className = currentSortDir === 'asc' 
-                ? 'fa-solid fa-sort-up ml-1 text-blue-400 sort-icon'
+            icon.className = appState[tab].sortDir === 'asc' 
+                ? 'fa-solid fa-sort-up ml-1 text-blue-400 sort-icon' 
                 : 'fa-solid fa-sort-down ml-1 text-blue-400 sort-icon';
         }
     }
@@ -274,7 +275,10 @@ onAuthStateChanged(auth, (user) => {
         document.body.classList.remove('is-admin');
         loginBtn.style.display = 'block';
     }
-    loadGames(); 
+    
+    // Force re-render of both tables to show/hide admin buttons cleanly
+    renderTable('played');
+    renderTable('worked');
 });
 
 // ==========================================
@@ -312,23 +316,14 @@ lightbox.addEventListener('click', () => {
 // ==========================================
 // TAG COLOR MANAGEMENT (ADMIN ONLY)
 // ==========================================
-manageTagsBtn.addEventListener('click', async () => {
+manageTagsBtn.addEventListener('click', () => {
     tagListContainer.innerHTML = '<p class="text-sm text-gray-400">Loading platforms...</p>'; 
     tagSettingsModal.classList.remove('hidden');
 
     const uniqueTags = new Set();
     
-    try {
-        const [playedSnap, workedSnap] = await Promise.all([
-            getDocs(collection(db, "games")),
-            getDocs(collection(db, "worked_games"))
-        ]);
-        
-        playedSnap.forEach(g => g.data().platforms.forEach(p => uniqueTags.add(p.trim())));
-        workedSnap.forEach(g => g.data().platforms.forEach(p => uniqueTags.add(p.trim())));
-    } catch (e) {
-        console.error("Error fetching tags for manager", e);
-    }
+    appState.played.list.forEach(g => g.data.platforms.forEach(p => uniqueTags.add(p.trim())));
+    appState.worked.list.forEach(g => g.data.platforms.forEach(p => uniqueTags.add(p.trim())));
 
     const sortedTags = Array.from(uniqueTags).sort((a, b) => a.localeCompare(b));
     tagListContainer.innerHTML = ''; 
@@ -383,7 +378,9 @@ saveTagsBtn.addEventListener('click', async () => {
         await setDoc(doc(db, "settings", "tagColors"), newColorSettings);
         customTagColors = newColorSettings; 
         tagSettingsModal.classList.add('hidden');
-        loadGames(); 
+        // Re-render both tables instantly to apply new colors
+        renderTable('played');
+        renderTable('worked');
     } catch (error) {
         alert("Error saving colors: " + error.message + "\n\nMake sure you updated your Firebase Rules to allow writing to /settings/");
     } finally {
@@ -428,13 +425,13 @@ addGameForm.addEventListener('submit', async (e) => {
             gameData.verdict = document.querySelector('input[name="verdict"]:checked').value;
         }
 
-        const collectionName = currentTab === 'played' ? "games" : "worked_games";
+        const targetCollection = appState[currentTab].collectionName;
 
         if (id) {
-            await updateDoc(doc(db, collectionName, id), gameData);
+            await updateDoc(doc(db, targetCollection, id), gameData);
         } else {
             gameData.createdAt = new Date();
-            await addDoc(collection(db, collectionName), gameData);
+            await addDoc(collection(db, targetCollection), gameData);
         }
 
         addGameForm.reset();
@@ -448,60 +445,62 @@ addGameForm.addEventListener('submit', async (e) => {
 });
 
 // ==========================================
-// 4. LOAD & RENDER GAMES & DRAG/DROP
+// 4. LOAD & RENDER GAMES (ABSOLUTE SEPARATION)
 // ==========================================
-async function loadGames() {
+async function initDatabases() {
     if (!tagColorsFetched) await fetchTagColors();
 
-    const collectionName = currentTab === 'played' ? "games" : "worked_games";
-    const q = query(collection(db, collectionName), orderBy("createdAt", "desc"));
-    
-    if (unsubscribeSnapshot) unsubscribeSnapshot();
-    
-    unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
-        // Ignora a atualização ao vivo caso o administrador esteja ativamente arrastando uma linha
-        if (!isDragging) {
-            processSnapshot(querySnapshot);
-        }
-    }, (error) => console.error("Live Sync Error:", error));
+    // TUNNEL 1: ONLY FOR PLAYED GAMES
+    const qPlayed = query(collection(db, appState.played.collectionName), orderBy("createdAt", "desc"));
+    if (appState.played.unsubscribe) appState.played.unsubscribe();
+    appState.played.unsubscribe = onSnapshot(qPlayed, (querySnapshot) => {
+        appState.played.list = [];
+        querySnapshot.forEach((docSnap) => {
+            appState.played.list.push({ id: docSnap.id, data: docSnap.data() });
+        });
+        renderTable('played');
+    }, (error) => console.error("Live Sync Error (Played):", error));
+
+    // TUNNEL 2: ONLY FOR INDUSTRY EXPERIENCE
+    const qWorked = query(collection(db, appState.worked.collectionName), orderBy("createdAt", "desc"));
+    if (appState.worked.unsubscribe) appState.worked.unsubscribe();
+    appState.worked.unsubscribe = onSnapshot(qWorked, (querySnapshot) => {
+        appState.worked.list = [];
+        querySnapshot.forEach((docSnap) => {
+            appState.worked.list.push({ id: docSnap.id, data: docSnap.data() });
+        });
+        renderTable('worked');
+    }, (error) => console.error("Live Sync Error (Worked):", error));
 }
 
-function processSnapshot(querySnapshot) {
-    loadedGamesList = []; 
-    
-    if(querySnapshot.empty) {
-        const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
-        targetBody.innerHTML = `<tr><td colspan="${currentTab === 'played' ? 8 : 5}" class="p-6 text-center text-gray-400">No games added yet.</td></tr>`;
+function renderTable(tab) {
+    const targetBody = tab === 'played' ? gamesTableBody : workedTableBody;
+    targetBody.innerHTML = ''; 
+
+    // Extrai unicamente os dados garantidos da aba chamada
+    let listToRender = [...appState[tab].list];
+
+    if (listToRender.length === 0) {
+        targetBody.innerHTML = `<tr><td colspan="${tab === 'played' ? 8 : 5}" class="p-6 text-center text-gray-400">No entries yet.</td></tr>`;
         return;
     }
 
-    querySnapshot.forEach((docSnap) => {
-        loadedGamesList.push({ id: docSnap.id, data: docSnap.data() });
-    });
+    const sortCol = appState[tab].sortCol;
+    const sortDir = appState[tab].sortDir;
 
-    renderFromList();
-}
-
-function renderFromList() {
-    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
-    targetBody.innerHTML = ''; 
-
-    let listToRender = [...loadedGamesList];
-
-    // Lógica Matemática e Alfabética de Ordenação
-    if (currentSortCol) {
+    if (sortCol) {
         listToRender.sort((a, b) => {
-            let valA = a.data[currentSortCol];
-            let valB = b.data[currentSortCol];
+            let valA = a.data[sortCol];
+            let valB = b.data[sortCol];
             
-            if (currentSortCol === 'title') {
+            if (sortCol === 'title') {
                 valA = (valA || "").toString().toLowerCase();
                 valB = (valB || "").toString().toLowerCase();
-                return currentSortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
             } else {
                 valA = Number(valA) || 0;
                 valB = Number(valB) || 0;
-                return currentSortDir === 'desc' ? valB - valA : valA - valB;
+                return sortDir === 'desc' ? valB - valA : valA - valB;
             }
         });
     }
@@ -514,12 +513,8 @@ function renderFromList() {
             return `<span class="tag shadow border border-white/20" style="background-color: ${colorConfig.bg}; color: ${colorConfig.text}">${p}</span>`;
         }).join('');
         
-        // Se a tabela estiver sob um filtro de ordenação, desabilitamos o botão visual de drag
-        const isSortActive = currentSortCol !== null;
-        
         const adminButtons = `
             <div class="flex items-start justify-center gap-2 sm:gap-3">
-                <i class="fa-solid fa-grip-vertical drag-handle transition text-base sm:text-lg p-1.5 ${isSortActive ? 'text-gray-700 cursor-not-allowed opacity-50' : 'text-gray-500 hover:text-white cursor-grab active:cursor-grabbing'}" title="${isSortActive ? 'Clear sorting to manually reorder' : 'Drag to reorder'}"></i>
                 <button class="edit-btn text-blue-400 hover:text-blue-300 transition text-sm sm:text-base p-1.5" title="Edit"><i class="fa-solid fa-pen"></i></button>
                 <button class="delete-btn text-red-500 hover:text-red-400 transition text-sm sm:text-base p-1.5" title="Delete"><i class="fa-solid fa-trash"></i></button>
             </div>
@@ -529,58 +524,58 @@ function renderFromList() {
         tr.className = "hover:bg-gray-800/40 transition duration-200 group";
         tr.setAttribute('data-id', id);
         
-        if (currentTab === 'played') {
+        if (tab === 'played') {
             const verdictIcon = data.verdict === 'up' 
                 ? '<i class="fa-solid fa-thumbs-up text-green-400 text-lg sm:text-2xl" title="Recommend"></i>' 
                 : '<i class="fa-solid fa-thumbs-down text-red-400 text-lg sm:text-2xl" title="Don\'t Recommend"></i>';
 
             tr.innerHTML = `
-                <td class="p-2.5 sm:p-4 align-top text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <h3 class="text-sm sm:text-base font-bold text-white mb-2 leading-snug">${data.title}</h3>
                     <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <span class="inline-flex items-center justify-center text-gray-300 font-mono text-xs sm:text-sm bg-gray-800 px-2 py-1.5 rounded border border-gray-700 whitespace-nowrap shrink-0">
                         <i class="fa-regular fa-clock text-gray-500 mr-1.5"></i>${Number(data.hours).toFixed(1)}h
                     </span>
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <div class="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-blue-400 to-blue-600 drop-shadow-sm">
                         ${Number(data.rating).toFixed(1)}
                     </div>
                 </td>
-                <td class="p-2.5 sm:p-4 align-top">
+                <td class="p-3 sm:p-4 align-top">
                     <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-4 sm:line-clamp-none">"${formatReview(data.review)}"</p>
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center whitespace-nowrap">
+                <td class="p-3 sm:p-4 align-top text-center whitespace-nowrap">
                     <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center pt-5">
+                <td class="p-3 sm:p-4 align-top text-center pt-5">
                     ${verdictIcon}
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
+                <td class="p-3 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
                     ${adminButtons}
                 </td>
             `;
         } else {
             tr.innerHTML = `
-                <td class="p-2.5 sm:p-4 align-top text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <img src="${data.coverUrl}" alt="${data.title}" class="cover-img cursor-zoom-in w-16 sm:w-20 mx-auto aspect-[3/4] object-cover rounded shadow border border-gray-700 group-hover:border-blue-500 transition" data-url="${data.coverUrl}">
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center">
+                <td class="p-3 sm:p-4 align-top text-center">
                     <h3 class="text-sm sm:text-base font-bold text-white mb-2 leading-snug">${data.title}</h3>
                     <div class="flex flex-wrap justify-center gap-1">${tagsHTML}</div>
                 </td>
-                <td class="p-2.5 sm:p-4 align-top">
+                <td class="p-3 sm:p-4 align-top">
                     <p class="text-gray-400 text-xs sm:text-sm italic leading-relaxed line-clamp-4 sm:line-clamp-none">"${formatReview(data.review)}"</p>
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center whitespace-nowrap">
+                <td class="p-3 sm:p-4 align-top text-center whitespace-nowrap">
                     <span class="text-gray-300 font-semibold">${data.year || '-'}</span>
                 </td>
-                <td class="p-2.5 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
+                <td class="p-3 sm:p-4 align-top text-center admin-only admin-table-cell hidden">
                     ${adminButtons}
                 </td>
             `;
@@ -592,78 +587,23 @@ function renderFromList() {
         });
 
         if (isAdmin) {
-            tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(id, data));
-            tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(id, data.title));
+            // Repassamos a aba especifica para garantir blindagem nas funções de edição e remoção
+            tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(id, data, tab));
+            tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(id, data.title, tab));
         }
 
         targetBody.appendChild(tr);
-    });
-
-    // Controla a inicialização do Drag & Drop
-    if (isAdmin) {
-        if (!currentSortCol) {
-            initSortable();
-        } else if (sortableInstance) {
-            sortableInstance.destroy();
-            sortableInstance = null;
-        }
-    }
-}
-
-// Inicializa a engine do Drag and Drop silenciosa
-function initSortable() {
-    if (sortableInstance) {
-        sortableInstance.destroy();
-        sortableInstance = null;
-    }
-
-    const targetBody = currentTab === 'played' ? gamesTableBody : workedTableBody;
-    const collectionName = currentTab === 'played' ? "games" : "worked_games";
-
-    sortableInstance = Sortable.create(targetBody, {
-        handle: '.drag-handle', 
-        animation: 150, 
-        forceFallback: true, // Garante que a linha acompanhe o mouse até o topo exato da tabela
-        fallbackClass: 'sortable-drag', 
-        ghostClass: 'sortable-ghost',
-        
-        onStart: function () {
-            isDragging = true; 
-        },
-        onEnd: async function (evt) {
-            isDragging = false; 
-
-            if (evt.oldIndex === evt.newIndex) return;
-
-            const rows = Array.from(targetBody.querySelectorAll('tr[data-id]'));
-            const newOrderIds = rows.map(row => row.dataset.id);
-
-            const baseTime = Date.now();
-            const batch = writeBatch(db);
-
-            // Grava a nova ordem forçando datas decrescentes perfeitamente limpas
-            newOrderIds.forEach((id, index) => {
-                const docRef = doc(db, collectionName, id);
-                const newTimestamp = new Date(baseTime - (index * 60000));
-                batch.update(docRef, { createdAt: newTimestamp });
-            });
-
-            try {
-                // Ao dar commit, a tabela será sutilmente engatilhada pelo onSnapshot sem piscar a tela
-                await batch.commit();
-            } catch (error) {
-                alert("Error saving order: " + error.message);
-                loadGames(); 
-            }
-        }
     });
 }
 
 // ==========================================
 // 5. ADMIN FUNCTIONS
 // ==========================================
-function openEditModal(id, data) {
-    prepareModalForTab(currentTab);
+function openEditModal(id, data, tabOrigin) {
+    // Força o sistema de tela para a tab de onde o item veio, se necessário
+    if (currentTab !== tabOrigin) switchTab(tabOrigin);
+    
+    prepareModalForTab(tabOrigin);
     
     document.getElementById('gameId').value = id;
     document.getElementById('gameOldCover').value = data.coverUrl;
@@ -672,7 +612,7 @@ function openEditModal(id, data) {
     document.getElementById('gameYear').value = data.year || new Date().getFullYear();
     document.getElementById('gameReview').value = data.review;
     
-    if (currentTab === 'played') {
+    if (tabOrigin === 'played') {
         document.getElementById('gameHours').value = data.hours;
         document.getElementById('gameRating').value = data.rating;
         document.querySelector(`input[name="verdict"][value="${data.verdict}"]`).checked = true;
@@ -681,16 +621,16 @@ function openEditModal(id, data) {
     document.getElementById('gameCover').required = false; 
     charCount.innerText = `${data.review.length} / 300 characters`;
 
-    document.getElementById('modalTitle').innerText = currentTab === 'played' ? "Edit Game" : "Edit Industry Experience";
+    document.getElementById('modalTitle').innerText = tabOrigin === 'played' ? "Edit Game" : "Edit Industry Experience";
     document.getElementById('submitBtn').innerText = "Update Entry";
     gameModal.classList.remove('hidden');
 }
 
-async function deleteGameNode(id, title) {
+async function deleteGameNode(id, title, tabOrigin) {
     if (confirm(`Are you sure you want to delete "${title}"?`)) {
         try {
-            const collectionName = currentTab === 'played' ? "games" : "worked_games";
-            await deleteDoc(doc(db, collectionName, id));
+            const targetCollection = appState[tabOrigin].collectionName;
+            await deleteDoc(doc(db, targetCollection, id));
         } catch (error) {
             alert("Error deleting: " + error.message);
         }
@@ -699,4 +639,4 @@ async function deleteGameNode(id, title) {
 
 // Initialize application
 setupSortingListeners();
-loadGames();
+initDatabases();
