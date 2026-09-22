@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>gameWithin 2.0</title>
+    <title>gameWithin</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome for icons -->
@@ -76,10 +76,10 @@
         <!-- Tabs Navigation -->
         <div class="flex gap-4 sm:gap-8 mb-4 sm:mb-6 border-b border-gray-700/50 pb-2 px-2">
             <button id="tabPlayedBtn" class="text-blue-400 font-bold border-b-2 border-blue-400 px-2 py-2 transition text-sm sm:text-base cursor-pointer">
-                Games I've Played
+                What I've Been Playing
             </button>
             <button id="tabWorkedBtn" class="text-gray-500 hover:text-gray-300 font-semibold border-b-2 border-transparent px-2 py-2 transition text-sm sm:text-base cursor-pointer">
-                Professional Work
+                Industry Experience
             </button>
         </div>
 
@@ -95,11 +95,17 @@
                     <thead class="bg-gray-800/80 border-b border-gray-700 text-xs sm:text-sm">
                         <tr>
                             <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-20 sm:w-28 text-center">Cover</th>
-                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-1/4 text-center">Title & Platforms</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-1/4 text-center cursor-pointer hover:text-white transition select-none sortable-col" data-sort="title">
+                                Title & Platforms <i class="fa-solid fa-sort ml-1 text-gray-600 sort-icon"></i>
+                            </th>
                             <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center whitespace-nowrap">Hours</th>
-                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center">Rating</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center cursor-pointer hover:text-white transition select-none sortable-col" data-sort="rating">
+                                Rating <i class="fa-solid fa-sort ml-1 text-gray-600 sort-icon"></i>
+                            </th>
                             <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-1/3">Review</th>
-                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center">Year</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center cursor-pointer hover:text-white transition select-none sortable-col" data-sort="year">
+                                Year <i class="fa-solid fa-sort ml-1 text-gray-600 sort-icon"></i>
+                            </th>
                             <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center">Verdict</th>
                             <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center admin-only admin-table-cell hidden w-28">Admin</th>
                         </tr>
@@ -118,9 +124,13 @@
                     <thead class="bg-gray-800/80 border-b border-gray-700 text-xs sm:text-sm">
                         <tr>
                             <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-20 sm:w-28 text-center">Cover</th>
-                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-1/4 text-center">Title & Platforms</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-1/4 text-center cursor-pointer hover:text-white transition select-none sortable-col" data-sort="title">
+                                Title & Platforms <i class="fa-solid fa-sort ml-1 text-gray-600 sort-icon"></i>
+                            </th>
                             <th class="p-2.5 sm:p-4 text-gray-400 font-semibold w-1/2">Service Provided</th>
-                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center w-24">Year</th>
+                            <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center w-24 cursor-pointer hover:text-white transition select-none sortable-col" data-sort="year">
+                                Year <i class="fa-solid fa-sort ml-1 text-gray-600 sort-icon"></i>
+                            </th>
                             <th class="p-2.5 sm:p-4 text-gray-400 font-semibold text-center admin-only admin-table-cell hidden w-28">Admin</th>
                         </tr>
                     </thead>
@@ -133,7 +143,7 @@
 
     </main>
 
-    <!-- Add/Edit Game Modal (Dynamically Configured via JS based on Tab) -->
+    <!-- Add/Edit Game Modal -->
     <div id="gameModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-3 sm:p-4">
         <div class="glass w-full max-w-lg rounded-xl p-5 sm:p-6 relative max-h-[92vh] overflow-y-auto table-scroll">
             <button id="closeModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
