@@ -178,7 +178,7 @@ function prepareModalForTab(tab) {
         hoursContainer.classList.remove('hidden');
         ratingContainer.classList.remove('hidden');
         verdictContainer.classList.remove('hidden');
-        statsGrid.className = "grid grid-cols-3 gap-2";
+        statsGrid.className = "grid grid-cols-3 gap-4";
         reviewLabel.innerText = "Review (Max 300 chars)";
         gameHours.required = true;
         gameRating.required = true;
@@ -186,7 +186,7 @@ function prepareModalForTab(tab) {
         hoursContainer.classList.add('hidden');
         ratingContainer.classList.add('hidden');
         verdictContainer.classList.add('hidden');
-        statsGrid.className = "grid grid-cols-1 gap-2";
+        statsGrid.className = "grid grid-cols-1 gap-4";
         reviewLabel.innerText = "Service Provided (Max 300 chars)";
         gameHours.required = false;
         gameRating.required = false;
