@@ -25,19 +25,19 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// Application Core State (Total Database Separation to prevent cross-contamination)
+// Application Core State (Initialized to order by Year natively)
 const appState = {
     played: {
         collectionName: "games",
         list: [],
-        sortCol: null, 
+        sortCol: 'year', 
         sortDir: 'desc',
         unsubscribe: null
     },
     worked: {
         collectionName: "worked_games",
         list: [],
-        sortCol: null,
+        sortCol: 'year',
         sortDir: 'desc',
         unsubscribe: null
     }
@@ -150,7 +150,6 @@ function switchTab(tab) {
     currentTab = tab;
 
     if (tab === 'played') {
-        // Highlight active visually
         tabPlayedBtn.className = "flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-bold bg-blue-600 text-white shadow-md transition-all";
         tabWorkedBtn.className = "flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-medium text-gray-400 hover:text-gray-200 transition-all cursor-pointer";
 
@@ -159,7 +158,6 @@ function switchTab(tab) {
         tableWorkedContainer.classList.remove('block');
         tableWorkedContainer.classList.add('hidden');
     } else {
-        // Highlight active visually
         tabWorkedBtn.className = "flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-bold bg-blue-600 text-white shadow-md transition-all";
         tabPlayedBtn.className = "flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-medium text-gray-400 hover:text-gray-200 transition-all cursor-pointer";
 
@@ -169,7 +167,6 @@ function switchTab(tab) {
         tablePlayedContainer.classList.add('hidden');
     }
     
-    // As renderizações agora são protegidas por abas, podemos apenas chamar o render
     renderTable(currentTab);
 }
 
@@ -197,12 +194,11 @@ function prepareModalForTab(tab) {
 }
 
 // ==========================================
-// SORTING LOGIC (STRICTLY INDEPENDENT)
+// SORTING LOGIC
 // ==========================================
 function setupSortingListeners() {
     document.querySelectorAll('.sortable-col').forEach(th => {
         th.addEventListener('click', () => {
-            // Identifier of the environment
             const tab = th.closest('#tablePlayedContainer') ? 'played' : 'worked';
             const col = th.getAttribute('data-sort');
             
@@ -222,7 +218,6 @@ function setupSortingListeners() {
 function updateSortIcons(tab) {
     const container = tab === 'played' ? tablePlayedContainer : tableWorkedContainer;
     
-    // Clear icons only in the relevant tab
     container.querySelectorAll('.sort-icon').forEach(icon => {
         icon.className = 'fa-solid fa-sort ml-1 text-gray-600 sort-icon'; 
     });
@@ -276,7 +271,6 @@ onAuthStateChanged(auth, (user) => {
         loginBtn.style.display = 'block';
     }
     
-    // Force re-render of both tables to show/hide admin buttons cleanly
     renderTable('played');
     renderTable('worked');
 });
@@ -378,7 +372,6 @@ saveTagsBtn.addEventListener('click', async () => {
         await setDoc(doc(db, "settings", "tagColors"), newColorSettings);
         customTagColors = newColorSettings; 
         tagSettingsModal.classList.add('hidden');
-        // Re-render both tables instantly to apply new colors
         renderTable('played');
         renderTable('worked');
     } catch (error) {
@@ -445,12 +438,11 @@ addGameForm.addEventListener('submit', async (e) => {
 });
 
 // ==========================================
-// 4. LOAD & RENDER GAMES (ABSOLUTE SEPARATION)
+// 4. LOAD & RENDER GAMES 
 // ==========================================
 async function initDatabases() {
     if (!tagColorsFetched) await fetchTagColors();
 
-    // TUNNEL 1: ONLY FOR PLAYED GAMES
     const qPlayed = query(collection(db, appState.played.collectionName), orderBy("createdAt", "desc"));
     if (appState.played.unsubscribe) appState.played.unsubscribe();
     appState.played.unsubscribe = onSnapshot(qPlayed, (querySnapshot) => {
@@ -461,7 +453,6 @@ async function initDatabases() {
         renderTable('played');
     }, (error) => console.error("Live Sync Error (Played):", error));
 
-    // TUNNEL 2: ONLY FOR INDUSTRY EXPERIENCE
     const qWorked = query(collection(db, appState.worked.collectionName), orderBy("createdAt", "desc"));
     if (appState.worked.unsubscribe) appState.worked.unsubscribe();
     appState.worked.unsubscribe = onSnapshot(qWorked, (querySnapshot) => {
@@ -477,7 +468,6 @@ function renderTable(tab) {
     const targetBody = tab === 'played' ? gamesTableBody : workedTableBody;
     targetBody.innerHTML = ''; 
 
-    // Extrai unicamente os dados garantidos da aba chamada
     let listToRender = [...appState[tab].list];
 
     if (listToRender.length === 0) {
@@ -500,6 +490,14 @@ function renderTable(tab) {
             } else {
                 valA = Number(valA) || 0;
                 valB = Number(valB) || 0;
+                
+                // Secondary sort: if primary values (e.g., Year) are equal, sort by newest added
+                if (valA === valB) {
+                    let timeA = a.data.createdAt ? (a.data.createdAt.toMillis ? a.data.createdAt.toMillis() : 0) : 0;
+                    let timeB = b.data.createdAt ? (b.data.createdAt.toMillis ? b.data.createdAt.toMillis() : 0) : 0;
+                    return timeB - timeA; 
+                }
+                
                 return sortDir === 'desc' ? valB - valA : valA - valB;
             }
         });
@@ -587,7 +585,6 @@ function renderTable(tab) {
         });
 
         if (isAdmin) {
-            // Repassamos a aba especifica para garantir blindagem nas funções de edição e remoção
             tr.querySelector('.edit-btn').addEventListener('click', () => openEditModal(id, data, tab));
             tr.querySelector('.delete-btn').addEventListener('click', () => deleteGameNode(id, data.title, tab));
         }
@@ -600,7 +597,6 @@ function renderTable(tab) {
 // 5. ADMIN FUNCTIONS
 // ==========================================
 function openEditModal(id, data, tabOrigin) {
-    // Força o sistema de tela para a tab de onde o item veio, se necessário
     if (currentTab !== tabOrigin) switchTab(tabOrigin);
     
     prepareModalForTab(tabOrigin);
@@ -639,4 +635,6 @@ async function deleteGameNode(id, title, tabOrigin) {
 
 // Initialize application
 setupSortingListeners();
+updateSortIcons('played');
+updateSortIcons('worked');
 initDatabases();
