@@ -25,7 +25,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
-// Application Core State (Initialized to order by Year natively)
+// Application Core State
 const appState = {
     played: {
         collectionName: "games",
@@ -45,6 +45,7 @@ const appState = {
 
 let currentTab = 'played'; 
 let isAdmin = false;
+let isWorkedTabUnlocked = false; // State for NDA unlock
 
 // Global Custom Colors Object
 let customTagColors = {}; 
@@ -53,6 +54,7 @@ let tagColorsFetched = false;
 // Tabs & Main UI Containers
 const tabPlayedBtn = document.getElementById('tabPlayedBtn');
 const tabWorkedBtn = document.getElementById('tabWorkedBtn');
+const tabLockIcon = document.getElementById('tabLockIcon');
 const tablePlayedContainer = document.getElementById('tablePlayedContainer');
 const tableWorkedContainer = document.getElementById('tableWorkedContainer');
 const gamesTableBody = document.getElementById('gamesTableBody');
@@ -77,6 +79,13 @@ const addGameForm = document.getElementById('addGameForm');
 const shareBtn = document.getElementById('shareBtn');
 const gameReview = document.getElementById('gameReview');
 const charCount = document.getElementById('charCount');
+
+// Password Modal Elements
+const passwordModal = document.getElementById('passwordModal');
+const closePasswordModalBtn = document.getElementById('closePasswordModalBtn');
+const passwordForm = document.getElementById('passwordForm');
+const ndaPassword = document.getElementById('ndaPassword');
+const passwordError = document.getElementById('passwordError');
 
 // Tag Management Elements
 const manageTagsBtn = document.getElementById('manageTagsBtn');
@@ -144,7 +153,7 @@ async function fetchTagColors() {
 }
 
 // ==========================================
-// TABS & SEGMENTED CONTROL LOGIC
+// TABS & NDA PASSWORD LOGIC
 // ==========================================
 function switchTab(tab) {
     currentTab = tab;
@@ -170,8 +179,36 @@ function switchTab(tab) {
     renderTable(currentTab);
 }
 
+// Password Modal Listeners
+closePasswordModalBtn.addEventListener('click', () => {
+    passwordModal.classList.add('hidden');
+});
+
+passwordForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (ndaPassword.value === '7951') {
+        isWorkedTabUnlocked = true;
+        tabLockIcon.classList.replace('fa-lock', 'fa-unlock');
+        passwordModal.classList.add('hidden');
+        switchTab('worked');
+    } else {
+        passwordError.classList.remove('hidden');
+    }
+});
+
 tabPlayedBtn.addEventListener('click', () => switchTab('played'));
-tabWorkedBtn.addEventListener('click', () => switchTab('worked'));
+
+tabWorkedBtn.addEventListener('click', () => {
+    if (isAdmin || isWorkedTabUnlocked) {
+        switchTab('worked');
+    } else {
+        // Show Password Prompt for Visitors
+        ndaPassword.value = '';
+        passwordError.classList.add('hidden');
+        passwordModal.classList.remove('hidden');
+        setTimeout(() => ndaPassword.focus(), 100);
+    }
+});
 
 function prepareModalForTab(tab) {
     if (tab === 'played') {
@@ -264,11 +301,18 @@ onAuthStateChanged(auth, (user) => {
         isAdmin = true;
         document.body.classList.add('is-admin');
         loginBtn.style.display = 'none';
+        tabLockIcon.classList.replace('fa-lock', 'fa-unlock');
     } else {
         if (user) signOut(auth);
         isAdmin = false;
+        isWorkedTabUnlocked = false; // Relock tab for visitors
+        tabLockIcon.classList.replace('fa-unlock', 'fa-lock');
         document.body.classList.remove('is-admin');
         loginBtn.style.display = 'block';
+        
+        if (currentTab === 'worked') {
+            switchTab('played'); // Kick out of protected tab if logged out
+        }
     }
     
     renderTable('played');
@@ -491,7 +535,6 @@ function renderTable(tab) {
                 valA = Number(valA) || 0;
                 valB = Number(valB) || 0;
                 
-                // Secondary sort: if primary values (e.g., Year) are equal, sort by newest added
                 if (valA === valB) {
                     let timeA = a.data.createdAt ? (a.data.createdAt.toMillis ? a.data.createdAt.toMillis() : 0) : 0;
                     let timeB = b.data.createdAt ? (b.data.createdAt.toMillis ? b.data.createdAt.toMillis() : 0) : 0;
