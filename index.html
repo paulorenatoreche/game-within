@@ -57,7 +57,7 @@
                     <i class="fa-solid fa-gamepad"></i> What I've Been Playing
                 </button>
                 <button id="tabWorkedBtn" class="flex-1 sm:w-64 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm sm:text-base font-medium text-gray-400 hover:text-gray-200 transition-all">
-                    <i class="fa-solid fa-briefcase"></i> Industry Experience
+                    <i class="fa-solid fa-briefcase"></i> Industry Experience <i class="fa-solid fa-lock text-[10px] ml-1 opacity-50" id="tabLockIcon"></i>
                 </button>
             </div>
         </div>
@@ -124,6 +124,21 @@
 
     </main>
 
+    <!-- Password Modal for NDA -->
+    <div id="passwordModal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 hidden p-4">
+        <div class="glass w-full max-w-sm rounded-xl p-6 relative shadow-2xl border border-gray-700">
+            <button id="closePasswordModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <h2 class="text-xl font-bold mb-2 text-white"><i class="fa-solid fa-user-secret mr-2 text-blue-400"></i>NDA Protected</h2>
+            <p class="text-sm text-gray-400 mb-5">Please enter the password to view professional industry experience.</p>
+            
+            <form id="passwordForm" class="flex flex-col gap-3">
+                <input type="password" id="ndaPassword" placeholder="Enter password..." required class="bg-gray-900 border border-gray-600 rounded-lg p-3 focus:outline-none focus:border-blue-500 text-white text-center tracking-[0.3em] font-mono shadow-inner">
+                <p id="passwordError" class="text-red-400 text-xs text-center font-semibold hidden"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Incorrect password.</p>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-4 rounded-lg mt-2 transition shadow-lg shadow-blue-600/30">Unlock Access</button>
+            </form>
+        </div>
+    </div>
+
     <!-- Add/Edit Game Modal -->
     <div id="gameModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50 hidden p-4">
         <div class="glass w-full max-w-lg rounded-xl p-6 relative max-h-[95vh] overflow-y-auto">
@@ -131,7 +146,6 @@
             <h2 id="modalTitle" class="text-xl font-bold mb-4">Add New Game</h2>
             
             <form id="addGameForm" class="flex flex-col gap-4">
-                <!-- Hidden inputs for Edit mode -->
                 <input type="hidden" id="gameId">
                 <input type="hidden" id="gameOldCover">
 
