@@ -45,7 +45,7 @@ const appState = {
 
 let currentTab = 'played'; 
 let isAdmin = false;
-let isWorkedTabUnlocked = false; // State for NDA unlock
+let isWorkedTabUnlocked = false; 
 
 // Global Custom Colors Object
 let customTagColors = {}; 
@@ -179,7 +179,6 @@ function switchTab(tab) {
     renderTable(currentTab);
 }
 
-// Password Modal Listeners
 closePasswordModalBtn.addEventListener('click', () => {
     passwordModal.classList.add('hidden');
 });
@@ -202,7 +201,6 @@ tabWorkedBtn.addEventListener('click', () => {
     if (isAdmin || isWorkedTabUnlocked) {
         switchTab('worked');
     } else {
-        // Show Password Prompt for Visitors
         ndaPassword.value = '';
         passwordError.classList.add('hidden');
         passwordModal.classList.remove('hidden');
@@ -305,13 +303,13 @@ onAuthStateChanged(auth, (user) => {
     } else {
         if (user) signOut(auth);
         isAdmin = false;
-        isWorkedTabUnlocked = false; // Relock tab for visitors
+        isWorkedTabUnlocked = false; 
         tabLockIcon.classList.replace('fa-unlock', 'fa-lock');
         document.body.classList.remove('is-admin');
         loginBtn.style.display = 'block';
         
         if (currentTab === 'worked') {
-            switchTab('played'); // Kick out of protected tab if logged out
+            switchTab('played'); 
         }
     }
     
